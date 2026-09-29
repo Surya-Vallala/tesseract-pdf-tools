@@ -1,8 +1,12 @@
 {
-  "version": "1.2.0",
-  "file": "downloads/TesseractPDFTools-Setup-1.2.0.exe",
+  "version": "1.3.0",
+  "file": "TesseractPDFTools-Setup-1.3.0.exe",
   "size_mb": 29.6,
-  "sha256": "918e504122b06682fef2b7fa81333f03479315d7e30802a833fe00c2b9018524",
+  "sha256": "0e74a3c7571846c49bb228f6a703d5db0df74eda44dd4a00c26c73618cb3e108",
   "date": "2026-09-29",
-  "notes": ""
+  "notes": [
+    "Fit Page now shows one page at a time: each scroll moves to the next page",
+    "New: Help > Check for Updates (always asks before going online)",
+    "Updating while the app is open: the installer waits for it to close"
+  ]
 }

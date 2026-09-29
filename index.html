@@ -132,7 +132,7 @@
 
   <section id="notes-section" hidden>
     <h2>What's new</h2>
-    <p class="notes" id="notes"></p>
+    <ul id="notes"></ul>
   </section>
 
   <section>
@@ -162,8 +162,11 @@
         if (v.size_mb) text += " \u00b7 " + v.size_mb + " MB";
         if (v.date) text += " \u00b7 " + new Date(v.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
         document.getElementById("version-line").textContent = text;
-        if (v.notes && v.notes.trim()) {
-          document.getElementById("notes").textContent = v.notes.trim();
+        var items = Array.isArray(v.notes) ? v.notes : (v.notes ? String(v.notes).split("\n") : []);
+        items = items.filter(function (t) { return String(t).trim(); });
+        if (items.length) {
+          var ul = document.getElementById("notes");
+          items.forEach(function (t) { var li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
           document.getElementById("notes-section").hidden = false;
         }
       })
