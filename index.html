@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tesseract PDF Tools</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<meta name="description" content="Tesseract PDF Tools: a simple Windows app to combine PDFs, toggle AutoCAD layers and handle everyday PDF tasks.">
+<style>
+  :root {
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --text: #1c1c1a;
+    --muted: #6b6b66;
+    --line: #e4e3de;
+    --accent: #1f4e79;
+    --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414;
+      --card: #1c1c1c;
+      --text: #f0efea;
+      --muted: #9a9a94;
+      --line: #2e2e2b;
+      --accent: #5b9bd5;
+      --accent-text: #0d0d0d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 56px 20px 40px;
+  }
+  .logo { display: block; width: 72px; height: 72px; margin: 0 0 20px; }
+  .brand {
+    font-size: 13px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  h1 {
+    font-size: 36px;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    font-weight: 650;
+  }
+  .lead {
+    font-size: 18px;
+    color: var(--muted);
+    margin: 0 0 32px;
+  }
+  .download {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 40px;
+  }
+  .btn {
+    display: block;
+    text-align: center;
+    background: var(--accent);
+    color: var(--accent-text);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 18px;
+    padding: 16px 20px;
+    border-radius: 10px;
+  }
+  .btn:hover { opacity: .92; }
+  .meta {
+    margin: 14px 0 0;
+    font-size: 14px;
+    color: var(--muted);
+    text-align: center;
+  }
+  h2 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+  section { margin-bottom: 36px; }
+  ul { margin: 0; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  ol { margin: 0; padding-left: 22px; }
+  ol li { margin-bottom: 8px; }
+  .notes { white-space: pre-line; margin: 0; }
+  .small { font-size: 14px; color: var(--muted); margin: 10px 0 0; }
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="data:image/png;base64,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" alt="Tesseract PDF Tools icon" width="72" height="72">
+  <p class="brand">Tesseract Studio</p>
+  <h1>Tesseract PDF Tools</h1>
+  <p class="lead">A simple, free Windows app for everyday PDF work on technical drawings. No sign-up, no payment.</p>
+
+  <div class="download">
+    <a class="btn" id="download-btn" href="#">Download for Windows</a>
+    <p class="meta" id="version-line">Latest version</p>
+  </div>
+
+  <section>
+    <h2>What it does</h2>
+    <ul>
+      <li>Combine multiple PDFs into one</li>
+      <li>Toggle AutoCAD layers on and off</li>
+      <li>Recognise text in scanned PDFs (OCR)</li>
+      <li>Standard PDF operations, all in one place</li>
+    </ul>
+  </section>
+
+  <section id="notes-section" hidden>
+    <h2>What's new</h2>
+    <p class="notes" id="notes"></p>
+  </section>
+
+  <section>
+    <h2>How to install</h2>
+    <ol>
+      <li>Download the setup file above. It works on 64-bit Windows 10 and 11.</li>
+      <li>Open it and follow the steps. No administrator rights are needed. A new version replaces the old one and keeps your settings.</li>
+    </ol>
+    <p class="small">If Windows shows "Windows protected your PC", choose <strong>More info</strong>, then <strong>Run anyway</strong>. This appears for new apps that are not yet widely downloaded.</p>
+  </section>
+
+  <footer>
+    Ideas or problems? Write to <a href="mailto:tools@tesseractstudio.co">tools@tesseractstudio.co</a>.
+  </footer>
+</main>
+
+<script>
+  // Reads version.json from this repo, so this page never needs editing.
+  (function () {
+    var btn = document.getElementById("download-btn");
+    fetch("version.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (v) {
+        if (!v.file) throw 0;
+        btn.href = v.file;
+        var text = "Version " + v.version;
+        if (v.size_mb) text += " \u00b7 " + v.size_mb + " MB";
+        if (v.date) text += " \u00b7 " + new Date(v.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        document.getElementById("version-line").textContent = text;
+        if (v.notes && v.notes.trim()) {
+          document.getElementById("notes").textContent = v.notes.trim();
+          document.getElementById("notes-section").hidden = false;
+        }
+      })
+      .catch(function () {
+        btn.removeAttribute("href");
+        btn.textContent = "Download coming soon";
+        btn.style.opacity = ".6";
+        document.getElementById("version-line").textContent = "The first version is being prepared.";
+      });
+  })();
+</script>
+</body>
+</html>
