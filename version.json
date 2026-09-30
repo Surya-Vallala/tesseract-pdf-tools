@@ -1,12 +1,14 @@
 {
-  "version": "1.3.0",
-  "file": "TesseractPDFTools-Setup-1.3.0.exe",
-  "size_mb": 29.6,
-  "sha256": "0e74a3c7571846c49bb228f6a703d5db0df74eda44dd4a00c26c73618cb3e108",
-  "date": "2026-09-29",
+  "version": "1.4.0",
+  "file": "TesseractPDFTools-Setup-1.4.0.exe",
+  "size_mb": 29.7,
+  "sha256": "9ea7b46e010d30b1577451e9d72389142fcdc5e4da462cec9bb0b292aedc29f4",
+  "date": "2026-09-30",
   "notes": [
-    "Fit Page now shows one page at a time: each scroll moves to the next page",
-    "New: Help > Check for Updates (always asks before going online)",
-    "Updating while the app is open: the installer waits for it to close"
+    "Comments: mark an area with a rectangle (R) or a freehand outline (F) and type a comment; it shrinks to an icon you can hover to read",
+    "Leader comments (L): an arrow to the point with the text on the page",
+    "Four colours and revision clouds sized to the sheet",
+    "Comments list in the side panel, with show / hide (printing follows it)",
+    "Comments are standard PDF comments, so Acrobat, Bluebeam, Chrome and Edge show them too"
   ]
 }
