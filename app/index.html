@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Tesseract PDF Tools</title>
+<meta name="description" content="Open drawings, turn AutoCAD layers on and off, combine PDFs and photos, and fix pages on your phone. Files stay on your phone.">
+<meta name="theme-color" content="#FAFAF8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-48.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="app.css">
+<script src="vendor/pdf-lib.min.js" defer></script>
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <section id="home" class="screen home">
+    <div class="home-inner">
+      <header class="home-head">
+        <img src="icons/icon.svg" alt="" class="home-logo" width="64" height="64">
+        <div>
+          <h1>Tesseract PDF Tools</h1>
+          <p class="home-sub">Tesseract Studio</p>
+        </div>
+      </header>
+
+      <div class="home-actions">
+        <button class="action primary" id="btnOpen" type="button">
+          <span class="action-ic" data-icon="file"></span>
+          <span class="action-text"><strong>Open a PDF</strong><span>View drawings, turn layers on and off, fix pages</span></span>
+        </button>
+        <button class="action" id="btnCombine" type="button">
+          <span class="action-ic" data-icon="combine"></span>
+          <span class="action-text"><strong>Combine files</strong><span>Join PDFs and photos into one PDF</span></span>
+        </button>
+      </div>
+
+      <div class="home-note" id="shareTip" hidden>
+        In WhatsApp, Gmail or My Files, tap <b>Share</b> on a PDF and choose <b>Tesseract PDF</b> to open it here.
+      </div>
+
+      <div class="install-card" id="installCard" hidden>
+        <p><strong>Install on this phone</strong><br>Adds a home screen icon, works offline, and lets you share PDFs straight into the app.</p>
+        <button class="btn primary" id="btnInstall" type="button" hidden>Install app</button>
+        <p class="install-manual" id="installManual">In Chrome, tap <b>&#8942;</b> at the top right, then <b>Install app</b>.</p>
+      </div>
+
+      <footer class="titleblock">
+        <div><span>Privacy</span>Files stay on this phone. Nothing is uploaded.</div>
+        <div><span>Version</span><b id="appVersion">1.0</b></div>
+      </footer>
+    </div>
+  </section>
+
+  <section id="docScreen" class="screen doc" hidden>
+    <header class="topbar">
+      <button class="ib" id="btnBack" type="button" aria-label="Close file" data-icon="back"></button>
+      <div class="doc-title">
+        <span id="docTitle"></span>
+        <span id="docMeta"></span>
+      </div>
+      <button class="ib" id="btnUndo" type="button" aria-label="Undo" data-icon="undo" disabled></button>
+      <button class="ib" id="btnAdd" type="button" aria-label="Add files" data-icon="plus"></button>
+      <button class="btn primary btn-save" id="btnSave" type="button">Save</button>
+    </header>
+
+    <div class="views">
+      <div id="viewer" class="viewer" tabindex="-1">
+        <div id="vwrap" class="vwrap"></div>
+        <div id="pageBadge" class="page-badge" aria-live="polite"></div>
+      </div>
+
+      <div id="pagesView" class="pages-view" hidden>
+        <div class="pages-head">
+          <span id="pagesInfo">Tap pages to select them. Press and hold to drag.</span>
+          <button class="link" id="btnSelAll" type="button">Select all</button>
+        </div>
+        <div id="grid" class="grid"></div>
+      </div>
+
+      <div id="emptyDoc" class="empty" hidden>
+        <p><strong>No pages left</strong></p>
+        <p>Undo to bring pages back, or add files.</p>
+      </div>
+    </div>
+
+    <nav class="tabbar" id="tabbar">
+      <button class="tab active" data-tab="view" type="button"><span data-icon="view"></span><span>View</span></button>
+      <button class="tab" data-tab="pages" type="button"><span data-icon="pages"></span><span>Pages</span></button>
+      <button class="tab" data-tab="layers" type="button" hidden><span data-icon="layers"></span><span>Layers</span></button>
+    </nav>
+
+    <nav class="tabbar selbar" id="selbar" hidden>
+      <button class="tab" data-act="rotl" type="button"><span data-icon="rotl"></span><span>Left</span></button>
+      <button class="tab" data-act="rotr" type="button"><span data-icon="rotr"></span><span>Right</span></button>
+      <button class="tab" data-act="crop" type="button"><span data-icon="crop"></span><span>Crop</span></button>
+      <button class="tab" data-act="extract" type="button"><span data-icon="extract"></span><span>Extract</span></button>
+      <button class="tab danger" data-act="delete" type="button"><span data-icon="trash"></span><span>Delete</span></button>
+    </nav>
+  </section>
+
+</div>
+
+<input type="file" id="pickOne" accept="application/pdf,.pdf,image/*" hidden>
+<input type="file" id="pickMany" accept="application/pdf,.pdf,image/*" multiple hidden>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<noscript><p style="padding:24px">Tesseract PDF Tools needs JavaScript turned on.</p></noscript>
+</body>
+</html>
