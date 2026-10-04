@@ -1,14 +1,15 @@
 {
-  "version": "1.4.0",
-  "file": "TesseractPDFTools-Setup-1.4.0.exe",
-  "size_mb": 29.7,
-  "sha256": "9ea7b46e010d30b1577451e9d72389142fcdc5e4da462cec9bb0b292aedc29f4",
-  "date": "2026-09-30",
+  "version": "1.5.0",
+  "file": "TesseractPDFTools-Setup-1.5.0.exe",
+  "size_mb": 29.8,
+  "sha256": "444f9c9efe59deac51c1faa10e6a5c60af3e90da1cace20ca83d376793aa8aab",
+  "date": "2026-10-04",
   "notes": [
-    "Comments: mark an area with a rectangle (R) or a freehand outline (F) and type a comment; it shrinks to an icon you can hover to read",
-    "Leader comments (L): an arrow to the point with the text on the page",
-    "Four colours and revision clouds sized to the sheet",
-    "Comments list in the side panel, with show / hide (printing follows it)",
-    "Comments are standard PDF comments, so Acrobat, Bluebeam, Chrome and Edge show them too"
+    "Draw on pages: pen, marker, highlighter, eraser and a blur that hides things for good (Draw, D)",
+    "Smooth, Straighten and straight-line drawing; thickness in proportion to the sheet",
+    "Shapes: arrows, curved arrow, rectangles, circles, polygons, stars, north arrow, section and level markers - with text inside",
+    "Tables that calculate like Excel: =SUM, Σ, fill down, Indian commas and ₹, paste from Excel",
+    "Drawing layers to compare design options, and Save Copy with Visible Layers",
+    "Full screen (F11), and toolbar labels that give way on smaller screens"
   ]
 }
