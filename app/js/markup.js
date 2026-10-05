@@ -2,18 +2,25 @@
 // One finger draws and two fingers scroll and zoom; once an S Pen is used, the pen
 // draws and a finger scrolls.
 import { newId } from "./doc.js";
-import { apply, distToPolyline, distToSeg } from "./geom.js";
+import { apply, inv, bbox, distToPolyline, distToSeg } from "./geom.js";
 import {
   THICKNESS, PEN_KIND, PEN_COLORS, HIGHLIGHT_COLORS, COMMENT_COLORS, SHAPE_NAMES,
-  inkDrawable, shapeDrawable, commentDrawable, drawableToSVG, itemBounds,
-  smoothPoints, thinPoints, straighten
+  inkDrawable, shapeDrawable, commentDrawable, drawableToSVG, drawableFor, itemBounds,
+  smoothPoints, thinPoints, blockMatrix
 } from "./shapes.js";
-import { icon, esc, h, segmented, openSheet, promptDialog, openMenu, toast } from "./ui.js";
+import { icon, esc, h, segmented, openSheet, promptDialog, openMenu, toast, pushLayer, closeLayer } from "./ui.js";
 import { settings } from "./platform.js";
+import { recognizeShape } from "./snap.js";
+import { sizeText } from "./blocks.js";
+import {
+  blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSize, familyOf, ratioForK
+} from "./blockui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
-const POINT_SHAPES = new Set(["arrow", "curved", "north", "section", "level"]);
-const CLOSED_SHAPES = new Set(["rect", "circle", "polygon", "star"]);
+const POINT_SHAPES = new Set(["arrow", "curved", "north", "section", "level", "line"]);
+const CLOSED_SHAPES = new Set(["rect", "circle", "polygon", "star", "poly"]);
+const HOLD_MS = 520;
+const isBlock = (it) => it && it.kind === "shape" && it.shape === "block";
 
 export class Markup {
   constructor({ viewer, screen, optbar, toolbar, chip, views, getDoc, onChange, onComment, askAuthor }) {
@@ -29,7 +36,10 @@ export class Markup {
     this.askAuthor = askAuthor;
     this.active = false;
     this.tool = "pen";
-    this.pen = settings.get("pen", { type: "pen", color: PEN_COLORS[0], hcolor: HIGHLIGHT_COLORS[0], thick: "medium", smooth: true, straighten: true, straightOnly: false });
+    this.pen = settings.get("pen", { type: "pen", color: PEN_COLORS[0], hcolor: HIGHLIGHT_COLORS[0], thick: "medium", smooth: true, straightOnly: false });
+    if (this.pen.snap == null) this.pen.snap = true;
+    delete this.pen.straighten;
+    this.block = settings.get("block", { color: "#1565C0", thick: "fine", fill: false });
     this.shape = settings.get("shape", { shape: "rect", color: "#1565C0", thick: "medium", fill: false, sides: 6 });
     this.comment = settings.get("comment", { ctype: "box", color: COMMENT_COLORS[0], cloud: true });
     this.penSeen = false;
@@ -168,6 +178,8 @@ export class Markup {
     } else if (tool === "select") {
       if (!selItem) {
         o.appendChild(h(`<p class="opt-note">Tap a mark to select it. Drag empty space to move around.</p>`));
+      } else if (isBlock(selItem)) {
+        this.appendBlockOptions(o, selItem);
       } else if (selItem.kind === "ink" || selItem.kind === "shape") {
         if (selItem.kind === "ink") {
           const pal = selItem.pen === "highlighter" ? HIGHLIGHT_COLORS : PEN_COLORS;
@@ -250,6 +262,7 @@ export class Markup {
     settings.set("pen", this.pen);
     settings.set("shape", this.shape);
     settings.set("comment", this.comment);
+    settings.set("block", this.block);
   }
 
   openPenStyle(anchor) {
@@ -260,7 +273,7 @@ export class Markup {
       thick: this.pen.thick,
       toggles: [
         { key: "smooth", label: "Smooth strokes", on: this.pen.smooth },
-        { key: "straighten", label: "Straighten nearly straight lines", on: this.pen.straighten },
+        { key: "snap", label: "Hold still at the end to make a clean shape", on: this.pen.snap !== false },
         { key: "straightOnly", label: "Straight lines only", on: this.pen.straightOnly }
       ],
       onChange: (p) => {
@@ -323,25 +336,294 @@ export class Markup {
       ["Shapes", ["rect", "circle", "polygon", "star"]],
       ["Drawing symbols", ["north", "section", "level"]]
     ];
-    const body = h(`<div class="shapes-body"></div>`);
+    const body = h(`<div class="shapes-body"><div data-tabs></div><div data-pane></div></div>`);
+    const pane = body.querySelector("[data-pane]");
+    const footBox = h(`<div class="shapes-foot"></div>`);
     let sheet;
-    for (const [title, list] of groups) {
-      body.appendChild(h(`<div class="group-label">${esc(title)}</div>`));
-      const grid = h(`<div class="shape-grid"></div>`);
-      for (const s of list) {
-        const b = h(`<button type="button" class="shape-tile${s === this.shape.shape && this.tool === "shapes" ? " on" : ""}">${icon(s)}<span>${esc(SHAPE_NAMES[s])}</span></button>`);
-        b.addEventListener("click", () => {
-          this.shape.shape = s;
-          this.savePrefs();
-          sheet.close();
-          this.setTool("shapes");
-        });
-        grid.appendChild(b);
+    let tab = settings.get("shapes-tab", "shapes");
+    const showShapes = () => {
+      pane.textContent = "";
+      footBox.textContent = "";
+      for (const [title, list] of groups) {
+        pane.appendChild(h(`<div class="group-label">${esc(title)}</div>`));
+        const grid = h(`<div class="shape-grid"></div>`);
+        for (const sh of list) {
+          const b = h(`<button type="button" class="shape-tile${sh === this.shape.shape && this.tool === "shapes" ? " on" : ""}">${icon(sh)}<span>${esc(SHAPE_NAMES[sh])}</span></button>`);
+          b.addEventListener("click", () => {
+            this.shape.shape = sh;
+            this.savePrefs();
+            sheet.close();
+            this.setTool("shapes");
+          });
+          grid.appendChild(b);
+        }
+        pane.appendChild(grid);
       }
-      body.appendChild(grid);
+      pane.appendChild(h(`<p class="note" style="margin-top:16px">Pick a shape, then drag on the page. Later, tap it with Select to move it, resize it or type text inside. With the pen, hold still at the end of a stroke to turn it into a clean shape.</p>`));
+    };
+    const showBlocks = () => {
+      pane.textContent = "";
+      footBox.textContent = "";
+      const vit = this.centerPage();
+      const k = vit && vit.p.blockK;
+      const photo = vit && this.doc.src(vit.p).kind === "image";
+      const note = k ? `Drawn to real size at <b>${photo ? "your measured scale" : "1:" + ratioForK(k)}</b>. Sizes in mm.` : "Drawn to real size. Sizes in mm. You'll set the scale once.";
+      const picker = blockPicker({
+        scaleNote: note,
+        onPick: (tile) => { sheet.close(); this.placeBlock(tile); },
+        onChangeScale: () => { sheet.close(); if (vit) this.changeScale(vit); }
+      });
+      pane.appendChild(picker.el);
+      footBox.appendChild(picker.foot);
+    };
+    const tabs = segmented([{ value: "shapes", label: "Shapes" }, { value: "blocks", label: "Architecture" }], tab, (v) => {
+      tab = v;
+      settings.set("shapes-tab", v);
+      (v === "blocks" ? showBlocks : showShapes)();
+    }, { label: "Shape library" });
+    tabs.classList.add("shape-tabs");
+    body.querySelector("[data-tabs]").appendChild(tabs);
+    (tab === "blocks" ? showBlocks : showShapes)();
+    sheet = openSheet({ title: "Shapes", body, foot: footBox, tall: true });
+    sheet.sheet.classList.add("shapes-sheet");
+  }
+
+  /* ---------- architecture blocks ---------- */
+
+  centerPage() {
+    const r = this.viewer.root.getBoundingClientRect();
+    return this.viewer.pageAt(r.left + r.width / 2, r.top + r.height / 2);
+  }
+
+  async ensureScale(vit) {
+    const p = vit.p;
+    if (p.blockK) return p.blockK;
+    const photo = this.doc.src(p).kind === "image";
+    const suggested = photo ? null : await findScale(this.doc, p);
+    const res = await openScaleSheet({ photo, suggested, firstTime: true });
+    if (!res) return null;
+    let k = res.k;
+    if (res.measure) k = await this.measure(vit);
+    if (!k) return null;
+    for (const q of this.doc.pages) if (q.src === p.src && !q.blockK) q.blockK = k;
+    p.blockK = k;
+    return k;
+  }
+
+  async changeScale(vit) {
+    const p = vit.p;
+    const doc = this.doc;
+    const photo = doc.src(p).kind === "image";
+    const oldK = p.blockK || null;
+    const res = await openScaleSheet({ photo, suggested: oldK ? null : await findScale(doc, p), current: oldK && !photo ? ratioForK(oldK) : null, firstTime: !oldK });
+    if (!res) return;
+    let k = res.k;
+    if (res.measure) k = await this.measure(vit);
+    if (!k) return;
+    doc.commit();
+    let moved = 0;
+    for (const q of doc.pages) {
+      if (q !== p && !(q.src === p.src && (q.blockK === oldK || !q.blockK))) continue;
+      q.blockK = k;
+      for (const it of q.items) if (isBlock(it) && (!oldK || Math.abs(it.k - oldK) < 1e-9)) { it.k = k; moved++; }
     }
-    body.appendChild(h(`<p class="note" style="margin-top:16px">Pick a shape, then drag on the page. Later, tap it with Select to move it, resize it or type text inside.</p>`));
-    sheet = openSheet({ title: "Shapes", body });
+    this.changed();
+    this.renderOptions();
+    toast(moved ? `Scale set. ${moved} block${moved === 1 ? "" : "s"} resized to match.` : "Scale set.");
+  }
+
+  async placeBlock(tile) {
+    const vit = this.centerPage();
+    if (!vit) return;
+    const k = await this.ensureScale(vit);
+    if (!k) return;
+    const doc = this.doc;
+    const g = this.viewer.geom(vit);
+    const r = this.viewer.root.getBoundingClientRect();
+    let [cx, cy] = this.viewer.toBase(vit, r.left + r.width / 2, r.top + r.height * 0.42);
+    const c = g.crop;
+    cx = Math.max(c.x0 * g.W, Math.min(c.x1 * g.W, cx));
+    cy = Math.max(c.y0 * g.H, Math.min(c.y1 * g.H, cy));
+    const layer = doc.ensureLayer();
+    doc.commit();
+    const it = {
+      id: newId(), kind: "shape", shape: "block", family: tile.family, name: tile.name, bw: tile.w, bd: tile.d, p: tile.p ? structuredClone(tile.p) : null,
+      x1: cx, y1: cy, x2: cx, y2: cy, rot: (360 - g.R) % 360, flip: false, k,
+      color: this.block.color, w: THICKNESS[this.block.thick] * g.unit, fill: !!this.block.fill, text: "", layer: layer.id
+    };
+    vit.p.items.push(it);
+    rememberBlock(tile);
+    this.tool = "select";
+    this.paintTools();
+    this.sel = { key: vit.p.key, id: it.id };
+    this.updateChip();
+    this.changed();
+    this.renderOptions();
+  }
+
+  appendBlockOptions(o, it) {
+    const thick = this.thickOf(it);
+    o.appendChild(this.styleButton(it.color, { fine: 2, medium: 4, thick: 7 }[thick], (e) => this.openStylePicker(e.currentTarget, {
+      colors: PEN_COLORS, color: it.color, thick,
+      onChange: ({ color, thick: t }) => {
+        this.editSelected((x) => {
+          if (color) x.color = color;
+          if (t) x.w = THICKNESS[t] * this.unitFor(this.sel.key);
+        });
+        if (color) this.block.color = color;
+        if (t) this.block.thick = t;
+        this.savePrefs();
+      }
+    }), "Colour and thickness"));
+    const f = h(`<button type="button" role="switch" aria-checked="${!!it.fill}" class="chip-btn toggle tight${it.fill ? " on" : ""}"><span class="fill-box white"></span><span>Fill</span></button>`);
+    f.addEventListener("click", () => { this.editSelected((x) => { x.fill = !x.fill; }); this.block.fill = !it.fill; this.savePrefs(); });
+    o.appendChild(f);
+    const vit = this.viewer.itemFor(this.sel.key);
+    const photo = vit && this.doc.src(vit.p).kind === "image";
+    const sc = h(`<button type="button" class="chip-btn tight">${icon("ruler")}<span>${photo ? "Scale" : "1:" + ratioForK(it.k)}</span></button>`);
+    sc.addEventListener("click", () => { if (vit) this.changeScale(vit); });
+    o.appendChild(sc);
+    const l = this.doc.layer(it.layer);
+    const lb = h(`<button type="button" class="chip-btn grow-btn">${icon("layers")}<span class="ell">${esc(l ? l.name : "Layer")}</span>${icon("chevdown")}</button>`);
+    lb.addEventListener("click", async () => {
+      const v = await openMenu(lb, this.doc.layers.map((x) => ({ label: x.name, value: x.id, checked: x.id === it.layer })), { above: true, align: "end" });
+      if (v) this.editSelected((x) => { x.layer = v; });
+    });
+    o.appendChild(lb);
+  }
+
+  async blockSize(anchor) {
+    const it = this.selectedItem();
+    if (!it) return;
+    const choices = sizeChoices(it);
+    const v = await openMenu(anchor, [
+      ...choices.map((c) => ({ label: c.label, value: "s" + c.i, checked: c.checked })),
+      { divider: true },
+      { label: "Custom size…", value: "custom" }
+    ], { align: "start" });
+    if (!v) return;
+    let w, d, pp = it.p, name = it.name;
+    if (v === "custom") {
+      const f = familyOf(it.family);
+      const t = await promptDialog({
+        title: "Custom size",
+        message: f && f.box ? "Width in mm." : "Width × depth in mm, like 1500 x 2000.",
+        value: f && f.box ? String(Math.round(it.bw)) : `${Math.round(it.bw)} x ${Math.round(it.bd)}`,
+        okText: "Use",
+        validate: (x) => (f && f.box ? (/^\s*\d{2,5}\s*$/.test(x) ? null : "Type the width, like 900.") : parseSize(x) ? null : "Type two sizes, like 1500 x 2000.")
+      });
+      if (t == null) return;
+      if (f && f.box) { w = Number(t); d = f.box(w)[1]; }
+      else ({ w, d } = parseSize(t));
+    } else {
+      const c = choices[Number(v.slice(1))];
+      w = c.size.w; d = c.size.d; pp = c.size.p ? structuredClone(c.size.p) : null;
+      if (c.size.name) name = c.size.name;
+    }
+    this.editSelected((x) => this.resizeBlock(x, w, d, pp, name));
+  }
+
+  // New size, keeping the back edge (the wall side) where it is.
+  resizeBlock(x, w, d, pp, name) {
+    const a = (x.rot * Math.PI) / 180;
+    const sh = ((d - x.bd) / 2) * x.k;
+    x.x1 += -Math.sin(a) * sh; x.y1 += Math.cos(a) * sh;
+    x.x2 = x.x1; x.y2 = x.y1;
+    x.bw = w; x.bd = d; x.p = pp; x.name = name;
+  }
+
+  blockFrame(it) {
+    const a = (it.rot * Math.PI) / 180;
+    return { ux: Math.cos(a), uy: Math.sin(a), vx: -Math.sin(a), vy: Math.cos(a) };
+  }
+
+  /* ---------- measuring to set the scale ---------- */
+
+  measure(vit) {
+    return new Promise((resolve) => {
+      const doc = this.doc;
+      const p = vit.p;
+      const photo = doc.src(p).kind === "image";
+      const r = this.viewer.root.getBoundingClientRect();
+      const pts = [this.viewer.toBase(vit, r.left + r.width * 0.3, r.top + r.height * 0.45), this.viewer.toBase(vit, r.left + r.width * 0.7, r.top + r.height * 0.45)];
+      const ui = h(`<div class="measure-ui"><svg class="measure-line"><line></line></svg><span class="m-mark" data-i="0"></span><span class="m-mark" data-i="1"></span></div>`);
+      const banner = h(`<div class="measure-banner">${icon("ruler")}<span>Drag the two ends onto something you know the length of, like a door opening. Pinch to zoom in for accuracy.</span></div>`);
+      const panel = h(`<form class="measure-panel" autocomplete="off">
+        <label for="m-len">How long is this?</label>
+        <div class="m-row"><span class="m-input"><input id="m-len" inputmode="numeric" enterkeyhint="done" placeholder="900"><em>mm</em></span><button type="submit" class="btn primary">Set scale</button></div>
+        <p class="m-note"></p>
+        <button type="button" class="btn link-btn" data-cancel>Cancel</button></form>`);
+      const input = panel.querySelector("input");
+      const note = panel.querySelector(".m-note");
+      let result = null;
+      const update = () => {
+        const L = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+        const mm = Number(input.value);
+        if (mm > 0 && L > 0) {
+          const k = L / mm;
+          note.textContent = photo ? "Blocks on this photo will use this length." : `That works out to about 1:${ratioForK(k)}.`;
+        } else note.textContent = "";
+      };
+      const place = () => {
+        const v = this.viewer.itemFor(p.key);
+        if (!v) return;
+        const g = this.viewer.geom(v);
+        const sx = v.w / g.dw;
+        const xy = pts.map(([bx, by]) => { const d = apply(g.b2d, bx, by); return [v.left + d[0] * sx, v.top + d[1] * sx]; });
+        ui.querySelectorAll(".m-mark").forEach((m, i) => { m.style.left = xy[i][0] + "px"; m.style.top = xy[i][1] + "px"; });
+        const ln = ui.querySelector("line");
+        ln.setAttribute("x1", xy[0][0]); ln.setAttribute("y1", xy[0][1]); ln.setAttribute("x2", xy[1][0]); ln.setAttribute("y2", xy[1][1]);
+      };
+      ui.querySelectorAll(".m-mark").forEach((m) => {
+        m.addEventListener("pointerdown", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          m.setPointerCapture(e.pointerId);
+          const i = Number(m.dataset.i);
+          // The end moves with the finger without jumping under it, so it stays visible.
+          const v0 = this.viewer.itemFor(p.key);
+          if (!v0) return;
+          const start = this.viewer.toBase(v0, e.clientX, e.clientY);
+          const from = pts[i].slice();
+          const onMove = (ev) => {
+            const v = this.viewer.itemFor(p.key);
+            if (!v) return;
+            const now = this.viewer.toBase(v, ev.clientX, ev.clientY);
+            pts[i] = [from[0] + now[0] - start[0], from[1] + now[1] - start[1]];
+            place();
+            update();
+          };
+          const onUp = () => { m.removeEventListener("pointermove", onMove); m.removeEventListener("pointerup", onUp); m.removeEventListener("pointercancel", onUp); };
+          m.addEventListener("pointermove", onMove);
+          m.addEventListener("pointerup", onUp);
+          m.addEventListener("pointercancel", onUp);
+        });
+      });
+      input.addEventListener("input", update);
+      this.select(null);
+      this.measuring = { place };
+      this.screen.classList.add("measuring");
+      this.viewer.wrap.appendChild(ui);
+      this.views.append(banner, panel);
+      place();
+      const layer = pushLayer({
+        onClose: () => {
+          ui.remove(); banner.remove(); panel.remove();
+          this.measuring = null;
+          this.screen.classList.remove("measuring");
+          resolve(result);
+        }
+      });
+      panel.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const L = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+        const mm = Number(input.value);
+        if (!(mm > 0) || !(L > 0)) { note.textContent = "Type the real length in mm, like 900."; input.focus(); return; }
+        result = L / mm;
+        closeLayer(layer);
+      });
+      panel.querySelector("[data-cancel]").addEventListener("click", () => closeLayer(layer));
+    });
   }
 
   /* ---------- selection ---------- */
@@ -375,6 +657,7 @@ export class Markup {
 
   drawSelection() {
     if (this.selUI) { this.selUI.remove(); this.selUI = null; }
+    if (this.measuring) this.measuring.place();
     const item = this.selectedItem();
     if (!item || !this.active) return;
     const vit = this.viewer.itemFor(this.sel.key);
@@ -386,9 +669,26 @@ export class Markup {
     const sx = vit.w / g.dw;
     const L = vit.left + Math.min(...xs) * sx - 6, T = vit.top + Math.min(...ys) * sx - 6;
     const W = (Math.max(...xs) - Math.min(...xs)) * sx + 12, H = (Math.max(...ys) - Math.min(...ys)) * sx + 12;
-    const ui = h(`<div class="sel-ui"><div class="selbox" style="left:${L}px;top:${T}px;width:${W}px;height:${H}px"></div></div>`);
+    const ui = h(`<div class="sel-ui"></div>`);
+    const er = vit.el.getBoundingClientRect();
+    const toWrap = (c) => [c[0] - er.left + vit.left, c[1] - er.top + vit.top];
+    let pillY = T + H + 8;
+    if (isBlock(item)) {
+      const m = blockMatrix(item);
+      const cs = [[0, 0], [item.bw, 0], [item.bw, item.bd], [0, item.bd]].map(([x, y]) => toWrap(this.viewer.toClient(vit, ...apply(m, x, y))));
+      const bw = Math.hypot(cs[1][0] - cs[0][0], cs[1][1] - cs[0][1]), bh = Math.hypot(cs[3][0] - cs[0][0], cs[3][1] - cs[0][1]);
+      const ang = Math.atan2(cs[1][1] - cs[0][1], cs[1][0] - cs[0][0]) * 180 / Math.PI;
+      const ccx = (cs[0][0] + cs[2][0]) / 2, ccy = (cs[0][1] + cs[2][1]) / 2;
+      ui.appendChild(h(`<div class="selbox" style="left:${ccx - bw / 2}px;top:${ccy - bh / 2}px;width:${bw}px;height:${bh}px;transform:rotate(${ang}deg)"></div>`));
+      pillY = Math.max(...cs.map((c) => c[1])) + 10;
+      ui.appendChild(h(`<span class="dim-pill" style="left:${ccx}px;top:${pillY}px">${sizeText(item.bw, item.bd)}</span>`));
+      pillY += 30;
+    } else {
+      ui.appendChild(h(`<div class="selbox" style="left:${L}px;top:${T}px;width:${W}px;height:${H}px"></div>`));
+    }
     for (const hd of this.handlesFor(item, vit)) {
-      ui.appendChild(h(`<span class="handle" style="left:${hd.x - vit.el.getBoundingClientRect().left + vit.left}px;top:${hd.y - vit.el.getBoundingClientRect().top + vit.top}px"></span>`));
+      const [x, y] = toWrap([hd.x, hd.y]);
+      ui.appendChild(h(`<span class="handle${hd.k === "rot" ? " rot" : ""}" style="left:${x}px;top:${y}px">${hd.k === "rot" ? icon("turn") : ""}</span>`));
     }
     const bar = h(`<div class="floatbar" role="toolbar" aria-label="Selected mark"></div>`);
     const add = (ic, label, fn, danger) => {
@@ -396,25 +696,45 @@ export class Markup {
       btn.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
       bar.appendChild(btn);
     };
-    if (item.kind === "shape") add("text", "Edit text", () => this.editText(item));
+    if (isBlock(item)) {
+      const sb = h(`<button type="button">${icon("size")}<span>Size</span></button>`);
+      sb.addEventListener("click", (e) => { e.stopPropagation(); this.blockSize(sb); });
+      bar.appendChild(sb);
+      add("turn", "Turn", () => this.editSelected((x) => { x.rot = ((x.rot || 0) + 90) % 360; }));
+      add("flip", "Flip", () => this.editSelected((x) => { x.flip = !x.flip; }));
+    } else if (item.kind === "shape" && item.shape !== "line" && item.shape !== "poly") add("text", "Edit text", () => this.editText(item));
     if (item.kind === "comment") add("edit", "Edit", () => this.onComment && this.onComment("edit", this.sel.key, item.id));
     if (item.kind !== "comment" && item.kind !== "blur") add("copy", "Copy", () => this.duplicateSelected());
     add("trash", "Delete", () => this.deleteSelected(), true);
+    bar.classList.toggle("labels", isBlock(item));
     const top = T - 52;
-    bar.style.top = (top < this.viewer.root.scrollTop + 4 ? T + H + 8 : top) + "px";
+    bar.style.top = (isBlock(item) ? pillY : top < this.viewer.root.scrollTop + 4 ? T + H + 8 : top) + "px";
     ui.appendChild(bar);
     this.viewer.wrap.appendChild(ui);
     const bw = bar.offsetWidth;
     const root = this.viewer.root;
     const minX = root.scrollLeft + 8 + bw / 2, maxX = root.scrollLeft + root.clientWidth - 8 - bw / 2;
     bar.style.left = Math.max(minX, Math.min(maxX, L + W / 2)) + "px";
+    const maxY = root.scrollTop + root.clientHeight - bar.offsetHeight - 8;
+    if (parseFloat(bar.style.top) > maxY) bar.style.top = Math.max(root.scrollTop + 8, Math.min(maxY, T - bar.offsetHeight - 10)) + "px";
     this.selUI = ui;
   }
 
   // Handles in client coordinates: corners for boxes, ends for arrows and symbols.
   handlesFor(item, vit) {
     const pts = [];
-    if (item.kind === "shape" && POINT_SHAPES.has(item.shape)) {
+    if (isBlock(item)) {
+      const { ux, uy, vx, vy } = this.blockFrame(item);
+      const hw = (item.bw / 2) * item.k, hd = (item.bd / 2) * item.k;
+      const cx = item.x1, cy = item.y1;
+      pts.push({ k: "br", b: [cx + ux * hw, cy + uy * hw] }, { k: "bl", b: [cx - ux * hw, cy - uy * hw] });
+      const f = familyOf(item.family);
+      if (!f || !f.box) pts.push({ k: "bb", b: [cx + vx * hd, cy + vy * hd] }, { k: "bt", b: [cx - vx * hd, cy - vy * hd] });
+      const off = 34 * this.viewer.basePerPx(vit);
+      pts.push({ k: "rot", b: [cx - vx * (hd + off), cy - vy * (hd + off)] });
+    } else if (item.kind === "shape" && item.shape === "poly") {
+      for (let i = 0; i < item.pts.length; i += 2) pts.push({ k: "v" + i / 2, b: [item.pts[i], item.pts[i + 1]] });
+    } else if (item.kind === "shape" && POINT_SHAPES.has(item.shape)) {
       pts.push({ k: "p1", b: [item.x1, item.y1] }, { k: "p2", b: [item.x2, item.y2] });
     } else if ((item.kind === "shape" && CLOSED_SHAPES.has(item.shape)) || item.kind === "blur" || (item.kind === "comment" && item.ctype === "box")) {
       const r = item.kind === "shape" ? { x0: Math.min(item.x1, item.x2), y0: Math.min(item.y1, item.y2), x1: Math.max(item.x1, item.x2), y1: Math.max(item.y1, item.y2) } : { x0: Math.min(item.x0, item.x1), y0: Math.min(item.y0, item.y1), x1: Math.max(item.x0, item.x1), y1: Math.max(item.y0, item.y1) };
@@ -487,8 +807,15 @@ export class Markup {
       if (it.kind === "comment" && (!includeComments || !doc.commentsVisible)) continue;
       if (it.kind === "ink") {
         if (distToPolyline(bx, by, it.pts) <= tol + it.w / 2) return it;
-      } else if (it.kind === "shape" && (it.shape === "arrow" || it.shape === "curved")) {
+      } else if (it.kind === "shape" && (it.shape === "arrow" || it.shape === "curved" || it.shape === "line")) {
         if (distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= tol + it.w) return it;
+      } else if (isBlock(it)) {
+        const [lx, ly] = apply(inv(blockMatrix(it)), bx, by);
+        const t = tol / it.k;
+        if (lx >= -t && lx <= it.bw + t && ly >= -t && ly <= it.bd + t) return it;
+      } else if (it.kind === "shape" && it.shape === "poly") {
+        const b = bbox(it.pts);
+        if (bx >= b.x0 - tol && bx <= b.x1 + tol && by >= b.y0 - tol && by <= b.y1 + tol) return it;
       } else {
         const b = itemBounds(it, g.unit);
         if (bx >= b.x0 - tol && bx <= b.x1 + tol && by >= b.y0 - tol && by <= b.y1 + tol) return it;
@@ -502,10 +829,21 @@ export class Markup {
     if (!item) return null;
     const vit = this.viewer.itemFor(this.sel.key);
     if (!vit) return null;
-    for (const hd of this.handlesFor(item, vit)) {
-      if (Math.hypot(e.clientX - hd.x, e.clientY - hd.y) < 22) return hd.k;
+    // A small block on screen: a touch on the block itself moves it, so only the turn handle
+    // and handles clear of the block count.
+    let inside = null;
+    if (isBlock(item)) {
+      const [bx, by] = this.viewer.toBase(vit, e.clientX, e.clientY);
+      const [lx, ly] = apply(inv(blockMatrix(item)), bx, by);
+      inside = lx >= 0 && lx <= item.bw && ly >= 0 && ly <= item.bd;
     }
-    return null;
+    let best = null, bd = 22;
+    for (const hd of this.handlesFor(item, vit)) {
+      const d = Math.hypot(e.clientX - hd.x, e.clientY - hd.y);
+      if (inside && hd.k !== "rot") continue;
+      if (d < bd) { bd = d; best = hd.k; }
+    }
+    return best;
   }
 
   /* ---------- pointer handling ---------- */
@@ -524,6 +862,10 @@ export class Markup {
     const base = { id: e.pointerId, vit, key: vit.p.key, x: e.clientX, y: e.clientY, b0: [bx, by], t: performance.now() };
     const fingerScrolls = e.pointerType === "touch" && this.penSeen;
     let tool = this.tool;
+    if (this.measuring) {
+      this.g = { ...base, type: "pan" };
+      return this.capture(e);
+    }
 
     // In the select and shapes tools, a selected mark can be moved or resized.
     if ((tool === "select" || tool === "shapes" || tool === "comment") && this.sel && this.sel.key === vit.p.key && !fingerScrolls) {
@@ -550,7 +892,8 @@ export class Markup {
     }
     if (this.sel && tool !== "select") this.select(null);
     if (tool === "pen") {
-      this.g = { ...base, type: "ink", pts: [bx, by] };
+      this.g = { ...base, type: "ink", pts: [bx, by], hold: { x: e.clientX, y: e.clientY } };
+      this.armHold(this.g);
     } else if (tool === "eraser") {
       this.g = { ...base, type: "erase", erased: 0 };
       this.eraseAt(vit, bx, by);
@@ -587,6 +930,11 @@ export class Markup {
     const [bx, by] = this.viewer.toBase(g.vit, last.clientX, last.clientY);
     g.b1 = [bx, by];
     const unit = this.viewer.geom(g.vit).unit;
+    if (g.type === "ink" && g.snap) return;
+    if (g.type === "ink" && Math.hypot(last.clientX - g.hold.x, last.clientY - g.hold.y) > 5) {
+      g.hold = { x: last.clientX, y: last.clientY };
+      this.armHold(g);
+    }
     if (g.type === "ink" || g.type === "c-free") {
       const tol = 1.2 * this.viewer.basePerPx(g.vit);
       for (const ev of events) {
@@ -626,13 +974,20 @@ export class Markup {
     const g = this.g;
     if (!g || e.pointerId !== g.id) return;
     this.g = null;
+    clearTimeout(g.holdTimer);
     if (cancelled) { this.viewer.setLive(g.key, ""); return; }
     const doc = this.doc;
     const p = g.vit.p;
     const unit = this.viewer.geom(g.vit).unit;
     const moved = Math.hypot(e.clientX - g.x, e.clientY - g.y) > 6 || performance.now() - g.t > 250;
     this.viewer.setLive(g.key, "");
-    if (g.type === "ink") {
+    if (g.type === "ink" && g.snap) {
+      const layer = doc.ensureLayer();
+      doc.commit();
+      p.items.push({ ...this.snapItem(g.snap, unit), id: newId(), layer: layer.id });
+      this.updateChip();
+      this.changed();
+    } else if (g.type === "ink") {
       let pts = g.pts;
       if (this.pen.straightOnly) {
         const [bx, by] = g.b1 || g.b0;
@@ -640,7 +995,6 @@ export class Markup {
       } else {
         const tol = 1.5 * this.viewer.basePerPx(g.vit);
         if (this.pen.smooth) pts = smoothPoints(thinPoints(pts, tol));
-        if (this.pen.straighten) pts = straighten(pts) || pts;
       }
       if (pts.length === 2) pts = [pts[0], pts[1], pts[0] + 0.01, pts[1]];
       const layer = doc.ensureLayer();
@@ -682,6 +1036,7 @@ export class Markup {
     const g = this.g;
     if (!g) return;
     this.g = null;
+    clearTimeout(g.holdTimer);
     if (g.type === "edit" && g.committed) { this.changed(); return; }
     this.viewer.setLive(g.key, "");
   }
@@ -693,6 +1048,34 @@ export class Markup {
       color: this.pen.type === "highlighter" ? this.pen.hcolor : this.pen.color,
       w: THICKNESS[this.pen.thick] * unit * k.mult, pts
     };
+  }
+
+  armHold(g) {
+    clearTimeout(g.holdTimer);
+    if (this.pen.straightOnly || this.pen.snap === false) return;
+    g.holdTimer = setTimeout(() => this.trySnap(g), HOLD_MS);
+  }
+
+  trySnap(g) {
+    if (this.g !== g || g.type !== "ink" || g.snap) return;
+    const r = recognizeShape(g.pts);
+    if (!r) return;
+    if (this.pen.type === "highlighter" && r.shape !== "line") return;
+    g.snap = r;
+    const unit = this.viewer.geom(g.vit).unit;
+    this.viewer.setLive(g.key, drawableToSVG(drawableFor(this.snapItem(r, unit), unit)));
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) { /* not supported */ }
+  }
+
+  snapItem(r, unit) {
+    if (this.pen.type === "highlighter") return this.inkItem([r.x1, r.y1, r.x2, r.y2], unit);
+    const k = PEN_KIND[this.pen.type] || PEN_KIND.pen;
+    const it = { kind: "shape", shape: r.shape, color: this.pen.color, w: THICKNESS[this.pen.thick] * unit * k.mult, fill: false, text: "" };
+    if (r.pts) {
+      const b = bbox(r.pts);
+      Object.assign(it, { pts: r.pts.slice(), x1: b.x0, y1: b.y0, x2: b.x1, y2: b.y1 });
+    } else Object.assign(it, { x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 });
+    return it;
   }
 
   shapeItem(b0, b1, unit) {
@@ -723,6 +1106,39 @@ export class Markup {
     if (g.mode === "move") {
       Object.assign(item, structuredClone(o));
       shiftItem(item, dx, dy);
+    } else if (isBlock(item) && g.mode === "rot") {
+      let a = (Math.atan2(by - o.y1, bx - o.x1) * 180) / Math.PI + 90;
+      a = ((a % 360) + 360) % 360;
+      const q90 = Math.round(a / 90) * 90, q15 = Math.round(a / 15) * 15;
+      if (Math.abs(a - q90) < 6) a = q90 % 360;
+      else if (Math.abs(a - q15) < 3) a = q15 % 360;
+      item.rot = a;
+    } else if (isBlock(item) && g.mode[0] === "b") {
+      const { ux, uy, vx, vy } = this.blockFrame(o);
+      const horiz = g.mode === "bl" || g.mode === "br";
+      const sgn = g.mode === "br" || g.mode === "bb" ? 1 : -1;
+      const along = horiz ? dx * ux + dy * uy : dx * vx + dy * vy;
+      const old = horiz ? o.bw : o.bd;
+      const nv = Math.max(100, Math.round((old + (sgn * along) / o.k) / 10) * 10);
+      const shift = (sgn * (nv - old) / 2) * o.k;
+      const f = familyOf(o.family);
+      let cx = o.x1 + (horiz ? ux : vx) * shift, cy = o.y1 + (horiz ? uy : vy) * shift;
+      if (horiz) {
+        item.bw = nv;
+        if (f && f.box) {
+          item.bd = f.box(nv)[1];
+          const sv = ((item.bd - o.bd) / 2) * o.k;
+          cx += vx * sv; cy += vy * sv;
+        }
+      } else item.bd = nv;
+      item.x1 = item.x2 = cx;
+      item.y1 = item.y2 = cy;
+    } else if (g.mode[0] === "v" && item.pts) {
+      const i = Number(g.mode.slice(1));
+      item.pts[2 * i] = o.pts[2 * i] + dx;
+      item.pts[2 * i + 1] = o.pts[2 * i + 1] + dy;
+      const b = bbox(item.pts);
+      item.x1 = b.x0; item.y1 = b.y0; item.x2 = b.x1; item.y2 = b.y1;
     } else if (g.mode === "p1") { item.x1 = o.x1 + dx; item.y1 = o.y1 + dy; }
     else if (g.mode === "p2") { item.x2 = o.x2 + dx; item.y2 = o.y2 + dy; }
     else if (g.mode === "tip") { item.ax = o.ax + dx; item.ay = o.ay + dy; }
@@ -823,6 +1239,7 @@ export function shiftItem(it, dx, dy) {
     for (let i = 0; i < it.pts.length; i += 2) { it.pts[i] += dx; it.pts[i + 1] += dy; }
   } else if (it.kind === "shape") {
     it.x1 += dx; it.y1 += dy; it.x2 += dx; it.y2 += dy;
+    if (it.pts) for (let i = 0; i < it.pts.length; i += 2) { it.pts[i] += dx; it.pts[i + 1] += dy; }
   } else if (it.kind === "blur" || (it.kind === "comment" && it.ctype === "box")) {
     it.x0 += dx; it.y0 += dy; it.x1 += dx; it.y1 += dy;
   } else if (it.kind === "comment" && it.ctype === "leader") {

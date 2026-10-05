@@ -1,6 +1,9 @@
 // Geometry of marks (pen strokes, shapes, comments) in base units.
 // The same description is drawn on screen (SVG) and written into the PDF, so they match.
 
+import { blockParts } from "./blocks.js";
+import { mul, apply } from "./geom.js";
+
 export const THICKNESS = { fine: 0.0012, medium: 0.0025, thick: 0.005 };
 export const PEN_KIND = {
   pen: { mult: 1, opacity: 1 },
@@ -12,7 +15,8 @@ export const HIGHLIGHT_COLORS = ["#FFEB3B", "#76FF03", "#40C4FF", "#FF80AB", "#F
 export const COMMENT_COLORS = ["#B07800", "#C62828", "#1565C0", "#2E7D32"];
 export const SHAPE_NAMES = {
   arrow: "Arrow", curved: "Curved arrow", rect: "Rectangle", circle: "Circle",
-  polygon: "Polygon", star: "Star", north: "North arrow", section: "Section", level: "Level"
+  polygon: "Polygon", star: "Star", north: "North arrow", section: "Section", level: "Level",
+  line: "Line", poly: "Shape", block: "Block"
 };
 
 const K = 0.5522847498;
@@ -171,7 +175,44 @@ function textBlock(text, cx, cy, size, color, anchor = "middle") {
   return lines.map((t, i) => ({ text: t, x: cx, y: top + i * lh, size, color, anchor, baseline: "middle" }));
 }
 
+// Block: local millimetres (x right, y down, 0,0 at the top-left of its w x d box) -> base units.
+export function blockMatrix(it) {
+  const a = ((it.rot || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const k = it.k;
+  return mul([c, s, -s, c, it.x1, it.y1], [k * (it.flip ? -1 : 1), 0, 0, k, -k * (it.flip ? -1 : 1) * it.bw / 2, -k * it.bd / 2]);
+}
+
+function xfCmds(cmds, m) {
+  return cmds.map((c) => {
+    if (c[0] === "Z") return c;
+    const o = [c[0]];
+    for (let i = 1; i < c.length; i += 2) { const q = apply(m, c[i], c[i + 1]); o.push(q[0], q[1]); }
+    return o;
+  });
+}
+
+function blockDrawable(it) {
+  const m = blockMatrix(it);
+  const paths = [], texts = [];
+  const color = it.color, w = it.w;
+  if (it.fill) paths.push({ cmds: xfCmds(polyCmds([0, 0, it.bw, 0, it.bw, it.bd, 0, it.bd], true), m), fill: "#FFFFFF", fillOpacity: 1 });
+  const dashOn = Math.max(110 * it.k, w * 3), dashOff = Math.max(75 * it.k, w * 2);
+  for (const part of blockParts(it.family, it.bw, it.bd, it.p)) {
+    if (part.text) {
+      const q = apply(m, part.x, part.y);
+      texts.push({ text: part.text, x: q[0], y: q[1], size: part.size * it.k, color, anchor: "middle", baseline: "middle" });
+      continue;
+    }
+    const path = { cmds: xfCmds(part.cmds, m), stroke: color, w };
+    if (part.fill) { path.fill = "#FFFFFF"; path.fillOpacity = 1; }
+    if (part.dash) path.dash = [dashOn, dashOff];
+    paths.push(path);
+  }
+  return { paths, texts };
+}
+
 export function shapeDrawable(it, unit) {
+  if (it.shape === "block") return blockDrawable(it);
   const { x1, y1, x2, y2, color } = it;
   const w = it.w;
   const fill = it.fill ? color : null;
@@ -204,6 +245,12 @@ export function shapeDrawable(it, unit) {
       if (it.text) texts.push(...textBlock(it.text, x1, y1 - tsize, tsize, color));
       break;
     }
+    case "line":
+      paths.push({ cmds: [["M", x1, y1], ["L", x2, y2]], stroke: color, w });
+      break;
+    case "poly":
+      paths.push({ cmds: polyCmds(it.pts, true), stroke: color, w, fill, fillOpacity: 0.18 });
+      break;
     case "rect":
       paths.push({ cmds: polyCmds([bx0, by0, bx1, by0, bx1, by1, bx0, by1], true), stroke: color, w, fill, fillOpacity: 0.18 });
       if (it.text) texts.push(...textBlock(it.text, cx, cy, tsize, color));
@@ -367,6 +414,7 @@ export function drawableToSVG(d, extraAttrs = "") {
     if (p.fill) attrs.push(`fill="${p.fill}"`, `fill-opacity="${p.fillOpacity ?? 1}"`);
     else attrs.push('fill="none"');
     if (p.stroke) attrs.push(`stroke="${p.stroke}"`, `stroke-width="${f(p.w)}"`, `stroke-linecap="${p.cap || "round"}"`, 'stroke-linejoin="round"');
+    if (p.stroke && p.dash) attrs.push(`stroke-dasharray="${f(p.dash[0])} ${f(p.dash[1])}"`);
     if (p.opacity != null && p.opacity < 1) attrs.push(`opacity="${p.opacity}"`);
     if (p.multiply) attrs.push('style="mix-blend-mode:multiply"');
     out += `<path ${attrs.join(" ")}${extraAttrs}/>`;

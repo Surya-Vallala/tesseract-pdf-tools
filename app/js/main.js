@@ -12,7 +12,7 @@ import { engine } from "./engine.js";
 import { pickFiles, onIncomingFiles } from "./platform.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
 
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -407,15 +407,19 @@ $("selbar").addEventListener("click", async (e) => {
   }
 });
 
+// Undo and redo keep the selected mark selected when it still exists.
+function keepSelection() {
+  markup.select(markup.selectedItem() ? markup.sel : null);
+}
 function undo() {
   if (!cur) return;
-  markup.select(null);
   if (cur.doc.undo()) toast("Undone", { ms: 1500 });
+  keepSelection();
 }
 function redo() {
   if (!cur) return;
-  markup.select(null);
   if (cur.doc.redo()) toast("Redone", { ms: 1500 });
+  keepSelection();
 }
 
 document.querySelectorAll("[data-undo]").forEach((b) => b.addEventListener("click", undo));

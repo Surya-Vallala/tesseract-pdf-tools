@@ -151,7 +151,8 @@ async function drawableOps(B, R, d, m) {
     if (p.stroke) {
       const a = p.opacity ?? 1;
       s += "q\n" + (a < 1 || p.multiply ? `${R.gs(a, null, !!p.multiply)} gs\n` : "") +
-        `${rgbStr(p.stroke)} RG ${fmt(p.w * scale)} w ${p.cap === "butt" ? 0 : 1} J 1 j\n` + path(p.cmds) + "S\nQ\n";
+        `${rgbStr(p.stroke)} RG ${fmt(p.w * scale)} w ${p.cap === "butt" ? 0 : 1} J 1 j\n` +
+        (p.dash ? `[${fmt(p.dash[0] * scale)} ${fmt(p.dash[1] * scale)}] 0 d\n` : "") + path(p.cmds) + "S\nQ\n";
     }
   }
   for (const t of d.texts) s += await textOps(B, R, t, m);
