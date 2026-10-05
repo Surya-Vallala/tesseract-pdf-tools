@@ -2,6 +2,9 @@
 // Each page has a "base" picture sized for the current zoom (capped), and when you
 // zoom past that cap a sharp "detail" picture is drawn just for the part on screen.
 import { schedule, drawPage } from "./render.js";
+import { renderOverlay, setLive } from "./overlay.js";
+import { pageGeom, inv, apply, mul, rot, S } from "./geom.js";
+import { pdfjsLib } from "./doc.js";
 
 const BASE_MAX_PX = 4.5e6;
 const DETAIL_MAX_PX = 10e6;
@@ -30,6 +33,8 @@ export class Viewer {
     this.raf = 0;
     this.idleTimer = 0;
     this.badgeTimer = 0;
+    this.markup = false;
+    this.selectedId = null;
 
     root.addEventListener("scroll", () => this.onScroll(), { passive: true });
     root.addEventListener("touchstart", (e) => this.onTouchStart(e), { passive: false });
@@ -37,9 +42,16 @@ export class Viewer {
     root.addEventListener("touchend", (e) => this.onTouchEnd(e), { passive: false });
     root.addEventListener("touchcancel", (e) => this.onTouchEnd(e), { passive: false });
     root.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
-    root.addEventListener("dblclick", (e) => { if (!("ontouchstart" in window)) this.toggleZoomAt(e.clientX, e.clientY); });
+    root.addEventListener("dblclick", (e) => { if (!("ontouchstart" in window) && !this.markup) this.toggleZoomAt(e.clientX, e.clientY); });
     this.ro = new ResizeObserver(() => { if (this.active) this.relayoutKeepingPlace(); });
     this.ro.observe(root);
+    wrap.addEventListener("click", (e) => {
+      const b = e.target.closest(".pin, .pin-area");
+      if (!b) return;
+      const pageEl = b.closest(".vpage");
+      const it = this.items.find((x) => x.el === pageEl);
+      if (it && this.hooks.onPin) this.hooks.onPin(it.p, b.dataset.id, b);
+    });
   }
 
   /* ---------- document ---------- */
@@ -64,6 +76,7 @@ export class Viewer {
     if (it.detailJob) it.detailJob.cancel();
     if (it.base) it.base.width = 0;
     if (it.detail) it.detail.canvas.width = 0;
+    this.dropText(it);
     it.el.remove();
   }
 
@@ -76,7 +89,8 @@ export class Viewer {
         old.delete(p.key);
         const changed = it.p.rot !== p.rot || JSON.stringify(it.p.crop) !== JSON.stringify(p.crop) || it.fit !== this.fitOf(p);
         it.p = p;
-        if (changed) this.resetPicture(it);
+        if (changed) { this.resetPicture(it); this.dropText(it); }
+        it.ovVer = -1;
       } else {
         const el = document.createElement("div");
         el.className = "vpage";
@@ -117,6 +131,165 @@ export class Viewer {
     this.layerTimer = setTimeout(() => this.update(true), 60);
   }
 
+  // Marks, comments or the watermark changed: redraw the overlays.
+  marksChanged() {
+    if (!this.doc) return;
+    this.doc.ovVersion = (this.doc.ovVersion || 0) + 1;
+    this.update(false);
+  }
+
+  setMarkup(on) {
+    this.markup = on;
+    this.root.classList.toggle("markup", on);
+    this.tap = null;
+    this.lastTap = null;
+    clearTimeout(this.tapTimer);
+  }
+
+  /* ---------- page coordinates ---------- */
+
+  pageAt(clientX, clientY) {
+    let best = null, bestD = Infinity;
+    for (const it of this.items) {
+      const r = it.el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) continue;
+      const dx = clientX < r.left ? r.left - clientX : clientX > r.right ? clientX - r.right : 0;
+      const dy = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+      const d = dx + dy;
+      if (d < bestD) { bestD = d; best = it; }
+    }
+    return best;
+  }
+
+  geom(it) {
+    if (!it.g || it.gKey !== this.geomKey(it)) { it.g = pageGeom(this.doc, it.p); it.gKey = this.geomKey(it); }
+    return it.g;
+  }
+  geomKey(it) {
+    return `${it.p.rot}|${JSON.stringify(it.p.crop)}|${this.fitOf(it.p)}`;
+  }
+
+  toBase(it, clientX, clientY) {
+    const g = this.geom(it);
+    const r = it.el.getBoundingClientRect();
+    const dx = ((clientX - r.left) / r.width) * g.dw;
+    const dy = ((clientY - r.top) / r.height) * g.dh;
+    return apply(inv(g.b2d), dx, dy);
+  }
+
+  toClient(it, bx, by) {
+    const g = this.geom(it);
+    const r = it.el.getBoundingClientRect();
+    const d = apply(g.b2d, bx, by);
+    return [r.left + (d[0] / g.dw) * r.width, r.top + (d[1] / g.dh) * r.height];
+  }
+
+  // Base units per screen pixel on this page.
+  basePerPx(it) {
+    const g = this.geom(it);
+    const k = Math.sqrt(Math.abs(g.b2d[0] * g.b2d[3] - g.b2d[1] * g.b2d[2]));
+    return g.dw / it.w / k;
+  }
+
+  itemFor(key) {
+    return this.items.find((x) => x.p.key === key) || null;
+  }
+
+  setLive(key, svg) {
+    const it = this.itemFor(key);
+    if (it) setLive(this.doc, it, svg);
+  }
+
+  panBy(dx, dy) {
+    this.root.scrollLeft += dx;
+    this.root.scrollTop += dy;
+  }
+
+  /* ---------- text you can select ---------- */
+
+  dropText(it) {
+    if (it.text && it.text.wrapper) it.text.wrapper.remove();
+    it.text = null;
+    it.textPending = false;
+  }
+
+  async ensureText(it) {
+    if (it.text || it.textPending || !this.doc) return;
+    const doc = this.doc;
+    const s = doc.src(it.p);
+    const ocr = s.ocr && s.ocr[it.p.index];
+    it.textPending = true;
+    try {
+      if (ocr && ocr.words.length) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "tl-wrap ocr-layer";
+        const ctx = (this.measureCtx ||= document.createElement("canvas").getContext("2d"));
+        const frag = document.createDocumentFragment();
+        for (const w of ocr.words) {
+          const hgt = Math.max(1, w.y1 - w.y0);
+          const fs = hgt * 0.92;
+          ctx.font = `${100}px sans-serif`;
+          const mw = ctx.measureText(w.t).width * fs / 100 || 1;
+          const sp = document.createElement("span");
+          sp.textContent = w.t + " ";
+          sp.style.cssText = `left:${w.x0}px;top:${w.y0}px;font-size:${fs}px;transform:scaleX(${((w.x1 - w.x0) / mw).toFixed(4)})`;
+          frag.appendChild(sp);
+        }
+        wrapper.appendChild(frag);
+        it.text = { wrapper, kind: "ocr", R: ocr.R || 0 };
+      } else if (s.kind === "pdf") {
+        const page = await s.pdf.getPage(it.p.index + 1);
+        const g = this.geom(it);
+        const vp = page.getViewport({ scale: 1, rotation: g.R });
+        const tc = await page.getTextContent();
+        if (!tc.items.length || this.doc !== doc) { it.text = { empty: true }; return; }
+        const wrapper = document.createElement("div");
+        wrapper.className = "tl-wrap";
+        const container = document.createElement("div");
+        container.className = "textLayer";
+        container.style.setProperty("--scale-round-x", "1px");
+        container.style.setProperty("--scale-round-y", "1px");
+        wrapper.appendChild(container);
+        const tl = new pdfjsLib.TextLayer({ textContentSource: tc, container, viewport: vp });
+        await tl.render();
+        it.text = { wrapper, container, kind: "pdf", fw: vp.width, fh: vp.height };
+      } else {
+        it.text = { empty: true };
+        return;
+      }
+      if (this.doc !== doc || !it.el.isConnected) return;
+      const ref = it.ov ? it.ov.marks : null;
+      it.el.insertBefore(it.text.wrapper, ref);
+      this.layoutText(it);
+    } catch (e) {
+      it.text = { empty: true };
+    } finally {
+      it.textPending = false;
+    }
+  }
+
+  layoutText(it) {
+    const t = it.text;
+    if (!t || !t.wrapper) return;
+    const g = this.geom(it);
+    const s = it.w / g.dw;
+    if (t.kind === "ocr") {
+      const m = mul(S(s), mul(g.b2d, inv(rot(t.R, g.W, g.H))));
+      t.wrapper.style.transform = `matrix(${m.join(",")})`;
+      return;
+    }
+    const c = g.crop;
+    const R = rot(g.R, g.W, g.H);
+    const a = apply(R, c.x0 * g.W, c.y0 * g.H), b = apply(R, c.x1 * g.W, c.y1 * g.H);
+    const ox = Math.min(a[0], b[0]), oy = Math.min(a[1], b[1]);
+    const st = t.wrapper.style;
+    st.left = -ox * s + "px";
+    st.top = -oy * s + "px";
+    st.width = t.fw * s + "px";
+    st.height = t.fh * s + "px";
+    t.container.style.setProperty("--total-scale-factor", s);
+  }
+
   show() {
     this.active = true;
     this.layout();
@@ -154,9 +327,12 @@ export class Viewer {
       st.top = it.top + "px";
       st.width = it.w + "px";
       st.height = it.h + "px";
+      st.setProperty("--blur", Math.max(3, it.w * 0.012).toFixed(1) + "px");
+      if (it.text) this.layoutText(it);
     }
     this.wrap.style.width = contentW + "px";
     this.wrap.style.height = Math.max(y - GAP + MARGIN, this.root.clientHeight) + "px";
+    if (this.hooks.onLayout) this.hooks.onLayout();
   }
 
   rootRect() {
@@ -269,9 +445,13 @@ export class Viewer {
       const visible = itBottom > top && it.top < bottom;
       const near = itBottom > top - vh * 1.5 && it.top < bottom + vh * 1.5;
       const far = itBottom < top - vh * 4 || it.top > bottom + vh * 4;
+      if (visible || near) {
+        if (it.ovVer !== this.doc.ovVersion) renderOverlay(this.doc, it);
+      }
       if (visible) {
         this.ensureBase(it, 9);
         if (idle) this.ensureDetail(it);
+        if (idle && !this.markup) this.ensureText(it);
       } else if (near) {
         this.ensureBase(it, 3);
         this.dropDetail(it);
@@ -279,6 +459,7 @@ export class Viewer {
         if (it.baseJob) { it.baseJob.cancel(); it.baseJob = null; }
         this.dropDetail(it);
         if (far && it.base) { it.base.width = 0; it.base.remove(); it.base = null; it.baseScale = 0; }
+        if (far && it.text) this.dropText(it);
       }
     }
     this.hooks.onPage && this.hooks.onPage(this.currentIndex());
@@ -376,7 +557,7 @@ export class Viewer {
       st.top = region.y / k + "px";
       st.width = region.w / k + "px";
       st.height = region.h / k + "px";
-      if (it.detail) { it.detail.canvas.width = 0; it.detail.canvas.replaceWith(canvas); } else it.el.appendChild(canvas);
+      if (it.detail) { it.detail.canvas.width = 0; it.detail.canvas.replaceWith(canvas); } else it.el.insertBefore(canvas, it.base ? it.base.nextSibling : it.el.firstChild);
       it.detail = { canvas, zoom, ver, x0: region.x / k, y0: region.y / k, x1: (region.x + region.w) / k, y1: (region.y + region.h) / k };
     }, (e) => {
       if (it.detailJob === job) it.detailJob = null;
@@ -388,6 +569,7 @@ export class Viewer {
 
   onTouchStart(e) {
     if (e.touches.length === 2) {
+      if (this.hooks.onPinchStart) this.hooks.onPinchStart();
       const [a, b] = e.touches;
       const m = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
       this.pinch = {
@@ -403,7 +585,7 @@ export class Viewer {
       this.tap = null;
       clearTimeout(this.tapTimer);
       e.preventDefault();
-    } else if (e.touches.length === 1 && !this.pinch) {
+    } else if (e.touches.length === 1 && !this.pinch && !this.markup) {
       const t = e.touches[0];
       this.tap = { x: t.clientX, y: t.clientY, t: performance.now(), moved: false };
     } else {

@@ -115,6 +115,7 @@ async function loadPdfSource(file, name, askPassword) {
     const meta = await pdf.getMetadata();
     if (meta && meta.info && meta.info.EncryptFilterName) encrypted = true;
   } catch (e) { /* ignore */ }
+  if (!encrypted) encrypted = hasEncryptDict(bytes);
   let oc = null;
   try {
     const cfg = await pdf.getOptionalContentConfig();
@@ -129,10 +130,19 @@ async function loadPdfSource(file, name, askPassword) {
     pages,
     oc,
     encrypted,
+    locked: encrypted,
+    password: encrypted ? (password || "") : null,
     color: SOURCE_COLORS[(srcSeq - 1) % SOURCE_COLORS.length],
     layerTree: null,
     lib: null
   };
+}
+
+// Look for /Encrypt in the file's trailer area (pdf.js doesn't report owner-only protection).
+function hasEncryptDict(bytes) {
+  const tail = bytes.subarray(Math.max(0, bytes.length - 65536));
+  const str = new TextDecoder("latin1").decode(tail);
+  return /\/Encrypt\s/.test(str);
 }
 
 async function loadImageSource(file, name, kind) {
@@ -171,17 +181,34 @@ async function loadImageSource(file, name, kind) {
   };
 }
 
+/* ---------- Blank pages ---------- */
+
+export function blankSource(w, h) {
+  return { id: ++srcSeq, kind: "blank", name: "Blank page", w, h, color: "#8a8a84" };
+}
+
 /* ---------- The working document ---------- */
+
+let itemSeq = 0;
+export function newId(prefix = "m") {
+  return prefix + Date.now().toString(36) + (++itemSeq).toString(36);
+}
 
 export class Doc {
   constructor() {
     this.name = "";
     this.sources = new Map();
     this.pages = [];
+    this.layers = [];          // your drawing layers: { id, name, visible }
+    this.activeLayer = null;
+    this.watermark = null;
+    this.password = null;      // password the saved PDF gets
+    this.commentsVisible = true;
+    this.ovVersion = 0;
     this.history = [];
+    this.future = [];
     this.dirty = false;
     this.imageFit = "a4";
-    this.layerEdits = 0;
     this.listeners = new Map();
   }
 
@@ -197,15 +224,20 @@ export class Doc {
     this.sources.set(src.id, src);
     const count = src.kind === "pdf" ? src.pages.length : 1;
     const added = [];
-    for (let i = 0; i < count; i++) added.push({ key: ++pageSeq, src: src.id, index: i, rot: 0, crop: null });
+    for (let i = 0; i < count; i++) added.push({ key: ++pageSeq, src: src.id, index: i, rot: 0, crop: null, items: [] });
     this.pages.splice(atIndex, 0, ...added);
     return added;
   }
 
+  newPage(fromPage) {
+    return { ...structuredClone(fromPage), key: ++pageSeq };
+  }
+
   src(page) { return this.sources.get(page.src); }
 
+  // A PDF that still needs its password removed before it can be changed.
   get readOnly() {
-    for (const s of this.sources.values()) if (s.kind === "pdf" && s.encrypted) return true;
+    for (const s of this.sources.values()) if (s.kind === "pdf" && s.locked) return true;
     return false;
   }
   get hasImages() {
@@ -214,23 +246,62 @@ export class Doc {
   get layerSources() {
     return [...this.sources.values()].filter((s) => s.kind === "pdf" && s.oc && this.pages.some((p) => p.src === s.id));
   }
+  get hasMarks() {
+    return this.pages.some((p) => p.items.some((it) => it.kind !== "comment"));
+  }
+  comments() {
+    const out = [];
+    this.pages.forEach((p, i) => p.items.forEach((it) => { if (it.kind === "comment") out.push({ page: p, index: i, item: it }); }));
+    return out;
+  }
+  layer(id) { return this.layers.find((l) => l.id === id) || null; }
+
+  ensureLayer() {
+    let l = this.layer(this.activeLayer);
+    if (!l) {
+      l = this.layers.find((x) => x.visible) || null;
+      if (!l) {
+        l = { id: newId("L"), name: "Layer " + (this.layers.length + 1), visible: true };
+        this.layers.push(l);
+      }
+      this.activeLayer = l.id;
+    }
+    if (!l.visible) l.visible = true;
+    return l;
+  }
 
   /* history */
   snapshot() {
-    return { pages: this.pages.map((p) => ({ ...p, crop: p.crop ? { ...p.crop } : null })), imageFit: this.imageFit };
+    return structuredClone({
+      pages: this.pages, layers: this.layers, activeLayer: this.activeLayer,
+      watermark: this.watermark, imageFit: this.imageFit, password: this.password
+    });
+  }
+  restore(s) {
+    Object.assign(this, structuredClone(s));
   }
   commit() {
     this.history.push(this.snapshot());
-    if (this.history.length > 60) this.history.shift();
+    if (this.history.length > 80) this.history.shift();
+    this.future = [];
     this.dirty = true;
   }
   undo() {
     const s = this.history.pop();
     if (!s) return false;
-    this.pages = s.pages;
-    this.imageFit = s.imageFit;
+    this.future.push(this.snapshot());
+    this.restore(s);
     this.dirty = true;
     this.emit("pages", { undo: true });
+    return true;
+  }
+  redo() {
+    const s = this.future.pop();
+    if (!s) return false;
+    this.history.push(this.snapshot());
+    this.restore(s);
+    this.dirty = true;
+    this.emit("pages", { redo: true });
     return true;
   }
   changed(detail) {
@@ -248,7 +319,7 @@ export class Doc {
     return { W: s.w, H: s.h, R: ((p.rot % 360) + 360) % 360 };
   }
 
-  // Size of the cropped, rotated content (points for PDFs, pixels for photos).
+  // Size of the cropped, rotated content (points for PDF pages, pixels for photos).
   contentSize(p) {
     const { W, H, R } = this.base(p);
     const c = p.crop || FULL;
@@ -262,7 +333,7 @@ export class Doc {
   pageSize(p) {
     const s = this.src(p);
     const c = this.contentSize(p);
-    if (s.kind === "pdf") return { w: c.w, h: c.h };
+    if (s.kind !== "image") return { w: c.w, h: c.h };
     return imagePageSize(c.w, c.h, this.imageFit);
   }
 }
@@ -311,6 +382,13 @@ export function closeSource(s) {
     if (s.pdf) s.pdf.loadingTask.destroy();
     if (s.bitmap) s.bitmap.close();
   } catch (e) { /* already closed */ }
+}
+
+// Replace a protected PDF's bytes with the unlocked copy, so it can be edited.
+export function unlockSource(s, plainBytes) {
+  s.bytes = plainBytes;
+  s.lib = null;
+  s.locked = false;
 }
 
 // pdf-lib's view of a PDF source (used for saving and for reading the layer tree).

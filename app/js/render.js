@@ -1,6 +1,6 @@
 // Drawing pages onto canvases, with a small priority queue so the page you're
 // looking at is always drawn first.
-import { FULL, imagePlacement } from "./doc.js";
+import { FULL, imagePlacement, pdfjsLib } from "./doc.js";
 
 const MAX_ACTIVE = 2;
 const queue = [];
@@ -92,6 +92,7 @@ export async function drawPage(doc, p, scale, region, canvas, job, { contentOnly
       viewport: vp,
       transform: [1, 0, 0, 1, -(ox + region.x), -(oy + region.y)],
       optionalContentConfigPromise: s.oc ? Promise.resolve(s.oc) : null,
+      annotationMode: doc.commentsVisible ? pdfjsLib.AnnotationMode.ENABLE : pdfjsLib.AnnotationMode.DISABLE,
       background: "#ffffff"
     });
     if (job) job.task = task;
@@ -99,12 +100,13 @@ export async function drawPage(doc, p, scale, region, canvas, job, { contentOnly
     return;
   }
 
-  // Photo page
+  // Photo or blank page
   canvas.width = cw;
   canvas.height = ch;
   const ctx = canvas.getContext("2d", { alpha: false });
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, cw, ch);
+  if (s.kind === "blank") return;
   const { R } = doc.base(p);
   const c = p.crop || FULL;
   const cs = doc.contentSize(p);
@@ -128,6 +130,6 @@ export async function drawPage(doc, p, scale, region, canvas, job, { contentOnly
 export function renderKey(doc, p) {
   const s = doc.src(p);
   const c = p.crop ? `${p.crop.x0.toFixed(4)},${p.crop.y0.toFixed(4)},${p.crop.x1.toFixed(4)},${p.crop.y1.toFixed(4)}` : "-";
-  const extra = s.kind === "image" ? doc.imageFit : s.oc ? s.oc.getHash() : "";
+  const extra = s.kind === "image" ? doc.imageFit : s.kind === "pdf" ? (s.oc ? s.oc.getHash() : "") + (doc.commentsVisible ? "c" : "n") : "";
   return `${p.src}:${p.index}:${p.rot}:${c}:${extra}`;
 }

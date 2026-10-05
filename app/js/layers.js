@@ -1,6 +1,7 @@
 // Layers (PDF optional content), as AutoCAD writes them: read the tree, show it, toggle it.
 import { libDoc, baseName } from "./doc.js";
-import { openSheet, esc, h, icon } from "./ui.js";
+import { openSheet, esc, h, icon, openMenu, promptDialog, confirmDialog } from "./ui.js";
+import { newId } from "./doc.js";
 
 function idOf(ref) {
   return ref.generationNumber ? `${ref.objectNumber}R${ref.generationNumber}` : `${ref.objectNumber}R`;
@@ -88,11 +89,38 @@ function descendants(node, out = []) {
   return out;
 }
 
-export async function openLayers(doc, onChange) {
+export async function newDrawingLayer(doc) {
+  const name = await promptDialog({ title: "New drawing layer", label: "Name", value: `Layer ${doc.layers.length + 1}`, okText: "Create" });
+  if (name == null || !name.trim()) return null;
+  doc.commit();
+  const l = { id: newId("L"), name: name.trim(), visible: true };
+  doc.layers.push(l);
+  doc.activeLayer = l.id;
+  return l;
+}
+
+/** Menu from the "Drawing on …" chip: pick the layer to draw on. */
+export async function pickDrawingLayer(doc, anchor) {
+  const items = doc.layers.map((l) => ({ label: l.name + (l.visible ? "" : " (hidden)"), value: l.id, checked: l.id === doc.activeLayer, icon: "layers" }));
+  if (items.length) items.push({ divider: true });
+  items.push({ label: "New layer…", value: "__new", icon: "plus" });
+  const v = await openMenu(anchor, items, { align: "start" });
+  if (!v) return false;
+  if (v === "__new") return !!(await newDrawingLayer(doc));
+  const l = doc.layer(v);
+  doc.activeLayer = v;
+  if (l && !l.visible) l.visible = true;
+  return true;
+}
+
+/**
+ * The Layers sheet: comments on/off, your drawing layers, and the layers inside the PDF.
+ * hooks: { pdf(), marks(), comments() } called after changes.
+ */
+export async function openLayers(doc, hooks) {
   const sources = doc.layerSources;
   const trees = await Promise.all(sources.map((s) => layerTree(s)));
 
-  // Flatten into rows.
   const rows = [];
   const multi = sources.length > 1;
   sources.forEach((s, si) => {
@@ -103,41 +131,95 @@ export async function openLayers(doc, onChange) {
     }
     const walk = (nodes, depth, parents) => {
       for (const n of nodes) {
-        if (n.id) {
-          const row = { kind: "layer", src: s, depth, name: n.name, id: n.id, ids: [n.id, ...descendants(n)], parents };
-          rows.push(row);
-          walk(n.children, depth + 1, [...parents, row]);
-        } else {
-          const row = { kind: "head", src: s, depth, name: n.label, ids: descendants(n), parents };
-          rows.push(row);
-          walk(n.children, depth + 1, [...parents, row]);
-        }
+        const row = n.id
+          ? { kind: "layer", src: s, depth, name: n.name, id: n.id, ids: [n.id, ...descendants(n)], parents }
+          : { kind: "head", src: s, depth, name: n.label, ids: descendants(n), parents };
+        rows.push(row);
+        walk(n.children, depth + 1, [...parents, row]);
       }
     };
     walk(tree, multi ? 1 : 0, multi ? [rows[rows.length - 1]] : []);
   });
   const totalLayers = rows.filter((r) => r.kind === "layer").length;
 
-  const tools = h(`<div>
-    <div class="layer-tools">
-      <input class="input" type="search" placeholder="Find a layer" aria-label="Find a layer" enterkeyhint="search">
-      <button class="btn" type="button" data-all="1">All on</button>
-      <button class="btn" type="button" data-all="0">All off</button>
-    </div>
-    <div class="layer-tools" style="padding-top:6px;padding-bottom:6px;justify-content:space-between">
-      <span class="layer-summary"></span>
-      <button class="link" type="button" data-reset hidden>Reset to file</button>
-    </div>
+  const body = h(`<div class="layers-body">
+    <button type="button" role="switch" class="switch-row comments-row"></button>
+    <div class="sec-head"><span>Your drawing layers</span><button type="button" class="link" data-new>${icon("plus")}New layer</button></div>
+    <div class="my-layers"></div>
+    ${rows.length ? `<div class="sec-head"><span>Layers in this PDF</span><span><button type="button" class="link" data-all="1">All on</button><button type="button" class="link" data-all="0">All off</button></span></div>
+    <div class="layer-search"><label class="search-box">${icon("search")}<input type="search" placeholder="Find a layer" aria-label="Find a layer" enterkeyhint="search"></label></div>
+    <div class="sec-sub"><span class="layer-summary"></span><button class="link" type="button" data-reset hidden>Reset to file</button></div>
+    <ul class="layer-list" role="list"></ul>` : ""}
   </div>`);
-  const list = h(`<ul class="layer-list" role="list"></ul>`);
-  const body = document.createElement("div");
-  body.appendChild(list);
-  const sheet = openSheet({ title: "Layers", body, tools, tall: true, clear: true });
+  const sheet = openSheet({ title: "Layers", body, tall: true, clear: true });
   sheet.body.style.padding = "0";
 
-  const search = tools.querySelector("input");
-  const summary = tools.querySelector(".layer-summary");
-  const resetBtn = tools.querySelector("[data-reset]");
+  const cRow = body.querySelector(".comments-row");
+  const paintComments = () => {
+    const n = doc.comments().length;
+    cRow.setAttribute("aria-checked", doc.commentsVisible);
+    cRow.innerHTML = `<span class="switch${doc.commentsVisible ? " on" : ""}"></span><span class="grow">Comments</span><small>${n ? `${n} on pages` : "Also from the PDF"}</small>`;
+  };
+  cRow.addEventListener("click", () => {
+    doc.commentsVisible = !doc.commentsVisible;
+    paintComments();
+    hooks.comments && hooks.comments();
+  });
+  paintComments();
+
+  const mine = body.querySelector(".my-layers");
+  const paintMine = () => {
+    mine.innerHTML = "";
+    if (!doc.layers.length) {
+      mine.appendChild(h(`<p class="sec-empty">Layers you draw on in Mark up appear here. Use them to compare design options.</p>`));
+      return;
+    }
+    for (const l of doc.layers) {
+      const row = h(`<div class="my-layer${l.visible ? "" : " off"}">
+        <button type="button" role="switch" aria-checked="${l.visible}" class="my-layer-main"><span class="switch${l.visible ? " on" : ""}"></span><span class="name">${esc(l.name)}</span>${l.id === doc.activeLayer ? `<span class="tag">Drawing here</span>` : ""}</button>
+        <button type="button" class="ib" aria-label="More for ${esc(l.name)}">${icon("more")}</button></div>`);
+      row.querySelector(".my-layer-main").addEventListener("click", () => {
+        l.visible = !l.visible;
+        doc.dirty = true;
+        paintMine();
+        hooks.marks && hooks.marks();
+      });
+      const more = row.querySelector(".ib");
+      more.addEventListener("click", async () => {
+        const v = await openMenu(more, [
+          { label: "Draw on this layer", value: "use", icon: "pen" },
+          { label: "Rename", value: "rename", icon: "edit" },
+          { label: "Delete layer", value: "delete", icon: "trash", danger: true }
+        ]);
+        if (v === "use") { doc.activeLayer = l.id; l.visible = true; }
+        else if (v === "rename") {
+          const name = await promptDialog({ title: "Rename layer", label: "Name", value: l.name, okText: "Rename" });
+          if (name && name.trim()) { doc.commit(); l.name = name.trim(); }
+        } else if (v === "delete") {
+          const count = doc.pages.reduce((n, p) => n + p.items.filter((it) => it.layer === l.id).length, 0);
+          const ok = await confirmDialog({ title: `Delete “${l.name}”?`, message: count ? `Its ${count} drawing${count === 1 ? "" : "s"} will be deleted too. You can undo this.` : "", okText: "Delete", danger: true });
+          if (!ok) return;
+          doc.commit();
+          doc.layers = doc.layers.filter((x) => x.id !== l.id);
+          for (const p of doc.pages) p.items = p.items.filter((it) => it.layer !== l.id);
+          if (doc.activeLayer === l.id) doc.activeLayer = doc.layers.length ? doc.layers[0].id : null;
+        }
+        if (v) { paintMine(); hooks.marks && hooks.marks(); }
+      });
+      mine.appendChild(row);
+    }
+  };
+  body.querySelector("[data-new]").addEventListener("click", async () => {
+    if (await newDrawingLayer(doc)) { paintMine(); hooks.marks && hooks.marks(); }
+  });
+  paintMine();
+
+  if (!rows.length) return sheet;
+
+  const list = body.querySelector(".layer-list");
+  const search = body.querySelector(".layer-search input");
+  const summary = body.querySelector(".layer-summary");
+  const resetBtn = body.querySelector("[data-reset]");
   let shown = rows;
 
   const vis = (r, id) => { const g = r.src.oc.getGroup(id); return g ? g.visible : true; };
@@ -170,8 +252,7 @@ export async function openLayers(doc, onChange) {
     list.querySelectorAll(".layer-row").forEach((li) => {
       const r = shown[Number(li.dataset.i)];
       const st = stateOf(r);
-      const sw = li.querySelector(".switch");
-      sw.className = "switch" + (st === "on" ? " on" : st === "mixed" ? " mixed" : "");
+      li.querySelector(".switch").className = "switch" + (st === "on" ? " on" : st === "mixed" ? " mixed" : "");
       li.classList.toggle("off", st === "off");
       li.setAttribute("aria-checked", st === "on" ? "true" : st === "mixed" ? "mixed" : "false");
     });
@@ -183,25 +264,26 @@ export async function openLayers(doc, onChange) {
 
   function setMany(pairs, visible) {
     for (const [s, id] of pairs) s.oc.setVisibility(id, visible, false);
+    doc.dirty = true;
     paint();
-    onChange();
-  }
-
-  function toggleRow(r) {
-    const next = stateOf(r) !== "on";
-    setMany(r.ids.map((id) => [r.src, id]), next);
+    hooks.pdf && hooks.pdf();
   }
 
   list.addEventListener("click", (e) => {
     const li = e.target.closest(".layer-row");
-    if (li) toggleRow(shown[Number(li.dataset.i)]);
+    if (!li) return;
+    const r = shown[Number(li.dataset.i)];
+    setMany(r.ids.map((id) => [r.src, id]), stateOf(r) !== "on");
   });
   list.addEventListener("keydown", (e) => {
     if (e.key !== " " && e.key !== "Enter") return;
     const li = e.target.closest(".layer-row");
-    if (li) { e.preventDefault(); toggleRow(shown[Number(li.dataset.i)]); }
+    if (!li) return;
+    e.preventDefault();
+    const r = shown[Number(li.dataset.i)];
+    setMany(r.ids.map((id) => [r.src, id]), stateOf(r) !== "on");
   });
-  tools.querySelectorAll("[data-all]").forEach((b) => b.addEventListener("click", () => {
+  body.querySelectorAll("[data-all]").forEach((b) => b.addEventListener("click", () => {
     const pairs = [];
     for (const r of shown) if (r.kind === "layer") pairs.push([r.src, r.id]);
     setMany(pairs, b.dataset.all === "1");
@@ -209,7 +291,7 @@ export async function openLayers(doc, onChange) {
   resetBtn.addEventListener("click", async () => {
     for (const s of sources) s.oc = await s.pdf.getOptionalContentConfig();
     paint();
-    onChange();
+    hooks.pdf && hooks.pdf();
   });
   search.addEventListener("input", render);
   render();

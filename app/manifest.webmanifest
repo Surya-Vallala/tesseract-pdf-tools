@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Tesseract PDF Tools",
   "short_name": "Tesseract PDF",
-  "description": "Open drawings, turn AutoCAD layers on and off, combine PDFs and photos, and fix pages. Files stay on your phone.",
+  "description": "Open drawings, turn AutoCAD layers on and off, mark up, comment, combine PDFs and photos, and fix pages. Files stay on your phone.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

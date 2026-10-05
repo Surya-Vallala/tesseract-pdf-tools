@@ -5,6 +5,15 @@ import { baseName } from "./doc.js";
 
 const LONG_PRESS_MS = 380;
 
+function copyCanvas(c) {
+  const n = document.createElement("canvas");
+  n.width = c.width;
+  n.height = c.height;
+  n.style.cssText = c.style.cssText;
+  n.getContext("2d").drawImage(c, 0, 0);
+  return n;
+}
+
 export class PageGrid {
   constructor(scroller, grid, hooks = {}) {
     this.scroller = scroller;
@@ -98,7 +107,9 @@ export class PageGrid {
     const cached = this.thumbs.get(key);
     const old = box.querySelector("canvas, .ph");
     if (cached) {
-      old.replaceWith(cached);
+      // Duplicated pages look the same; each tile needs its own copy of the picture.
+      const pic = cached.parentNode && !box.contains(cached) ? copyCanvas(cached) : cached;
+      if (old) { if (old !== pic) old.replaceWith(pic); } else box.prepend(pic);
       t.key = key;
       return;
     }
@@ -134,7 +145,7 @@ export class PageGrid {
       this.thumbs.set(key, canvas);
       if (renderKey(doc, t.p) !== key) return;
       const old = box.querySelector("canvas, .ph");
-      if (old && old !== canvas) { old.replaceWith(canvas); }
+      if (old) { if (old !== canvas) old.replaceWith(canvas); } else box.prepend(canvas);
       t.key = key;
     }, (e) => {
       if (t.job === job) t.job = null;

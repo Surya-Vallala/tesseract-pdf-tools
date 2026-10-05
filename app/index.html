@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Tesseract PDF Tools</title>
-<meta name="description" content="Open drawings, turn AutoCAD layers on and off, combine PDFs and photos, and fix pages on your phone. Files stay on your phone.">
+<meta name="description" content="Open drawings, turn AutoCAD layers on and off, mark up, combine PDFs and photos, and fix pages on your phone. Files stay on your phone.">
 <meta name="theme-color" content="#FAFAF8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
@@ -31,7 +31,7 @@
       <div class="home-actions">
         <button class="action primary" id="btnOpen" type="button">
           <span class="action-ic" data-icon="file"></span>
-          <span class="action-text"><strong>Open a PDF</strong><span>View drawings, turn layers on and off, fix pages</span></span>
+          <span class="action-text"><strong>Open a PDF</strong><span>View drawings, turn layers on and off, mark up and fix pages</span></span>
         </button>
         <button class="action" id="btnCombine" type="button">
           <span class="action-ic" data-icon="combine"></span>
@@ -39,9 +39,9 @@
         </button>
       </div>
 
-      <div class="home-note" id="shareTip" hidden>
+      <p class="home-note" id="shareTip" hidden>
         In WhatsApp, Gmail or My Files, tap <b>Share</b> on a PDF and choose <b>Tesseract PDF</b> to open it here.
-      </div>
+      </p>
 
       <div class="install-card" id="installCard" hidden>
         <p><strong>Install on this phone</strong><br>Adds a home screen icon, works offline, and lets you share PDFs straight into the app.</p>
@@ -51,32 +51,42 @@
 
       <footer class="titleblock">
         <div><span>Privacy</span>Files stay on this phone. Nothing is uploaded.</div>
-        <div><span>Version</span><b id="appVersion">1.0</b></div>
+        <div><span>Version</span><b id="appVersion">1.1</b></div>
       </footer>
+      <p class="home-credits">Made with open-source pdf.js, pdf-lib, MuPDF and Tesseract. <a href="https://github.com/Surya-Vallala/tesseract-pdf-tools/tree/main/app" target="_blank" rel="noopener">Source and licences</a></p>
     </div>
   </section>
 
-  <section id="docScreen" class="screen doc" hidden>
-    <header class="topbar">
+  <section id="docScreen" class="screen doc tab-view" hidden>
+    <header class="topbar viewbar">
       <button class="ib" id="btnBack" type="button" aria-label="Close file" data-icon="back"></button>
       <div class="doc-title">
         <span id="docTitle"></span>
         <span id="docMeta"></span>
       </div>
-      <button class="ib" id="btnUndo" type="button" aria-label="Undo" data-icon="undo" disabled></button>
-      <button class="ib" id="btnAdd" type="button" aria-label="Add files" data-icon="plus"></button>
+      <button class="ib" data-undo type="button" aria-label="Undo" data-icon="undo" disabled></button>
+      <button class="ib" data-redo type="button" aria-label="Redo" data-icon="redo" disabled></button>
       <button class="btn primary btn-save" id="btnSave" type="button">Save</button>
     </header>
 
-    <div class="views">
+    <header class="topbar markbar">
+      <button class="btn done-btn" id="btnDone" type="button"><span data-icon="check"></span>Done</button>
+      <button class="layer-chip" id="layerChip" type="button"></button>
+      <button class="ib" data-undo type="button" aria-label="Undo" data-icon="undo" disabled></button>
+      <button class="ib" data-redo type="button" aria-label="Redo" data-icon="redo" disabled></button>
+    </header>
+
+    <div class="views" id="views">
       <div id="viewer" class="viewer" tabindex="-1">
         <div id="vwrap" class="vwrap"></div>
-        <div id="pageBadge" class="page-badge" aria-live="polite"></div>
       </div>
+      <div id="pageBadge" class="page-badge" aria-live="polite"></div>
+      <button id="commentsChip" class="comments-chip" type="button" hidden><span data-icon="comment"></span><span></span></button>
 
       <div id="pagesView" class="pages-view" hidden>
         <div class="pages-head">
           <span id="pagesInfo">Tap pages to select them. Press and hold to drag.</span>
+          <button class="link" id="btnAddFiles" type="button"><span data-icon="plus"></span>Add files</button>
           <button class="link" id="btnSelAll" type="button">Select all</button>
         </div>
         <div id="grid" class="grid"></div>
@@ -88,25 +98,36 @@
       </div>
     </div>
 
-    <nav class="tabbar" id="tabbar">
+    <nav class="tabbar" id="tabbar" aria-label="Document">
       <button class="tab active" data-tab="view" type="button"><span data-icon="view"></span><span>View</span></button>
       <button class="tab" data-tab="pages" type="button"><span data-icon="pages"></span><span>Pages</span></button>
-      <button class="tab" data-tab="layers" type="button" hidden><span data-icon="layers"></span><span>Layers</span></button>
+      <button class="tab" data-tab="markup" type="button"><span data-icon="markup"></span><span>Mark up</span></button>
+      <button class="tab" data-tab="layers" type="button"><span data-icon="layers"></span><span>Layers</span></button>
+      <button class="tab" data-tab="tools" type="button"><span data-icon="tools"></span><span>Tools</span></button>
     </nav>
 
-    <nav class="tabbar selbar" id="selbar" hidden>
+    <nav class="tabbar selbar" id="selbar" aria-label="Selected pages" hidden>
       <button class="tab" data-act="rotl" type="button"><span data-icon="rotl"></span><span>Left</span></button>
       <button class="tab" data-act="rotr" type="button"><span data-icon="rotr"></span><span>Right</span></button>
       <button class="tab" data-act="crop" type="button"><span data-icon="crop"></span><span>Crop</span></button>
       <button class="tab" data-act="extract" type="button"><span data-icon="extract"></span><span>Extract</span></button>
       <button class="tab danger" data-act="delete" type="button"><span data-icon="trash"></span><span>Delete</span></button>
+      <button class="tab" data-act="more" type="button"><span data-icon="more"></span><span>More</span></button>
+    </nav>
+
+    <div class="optbar" id="optbar"></div>
+    <nav class="tabbar toolbar" id="toolbar" aria-label="Mark-up tools">
+      <button class="tab" data-tool="select" type="button"><span class="tool-pill" data-icon="select"></span><span>Select</span></button>
+      <button class="tab" data-tool="pen" type="button"><span class="tool-pill" data-icon="pen"></span><span>Pen</span></button>
+      <button class="tab" data-tool="eraser" type="button"><span class="tool-pill" data-icon="eraser"></span><span>Eraser</span></button>
+      <button class="tab" data-tool="blur" type="button"><span class="tool-pill" data-icon="blur"></span><span>Blur</span></button>
+      <button class="tab" data-tool="shapes" type="button"><span class="tool-pill" data-icon="shapes"></span><span>Shapes</span></button>
+      <button class="tab" data-tool="comment" type="button"><span class="tool-pill" data-icon="comment"></span><span>Comment</span></button>
     </nav>
   </section>
 
 </div>
 
-<input type="file" id="pickOne" accept="application/pdf,.pdf,image/*" hidden>
-<input type="file" id="pickMany" accept="application/pdf,.pdf,image/*" multiple hidden>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <noscript><p style="padding:24px">Tesseract PDF Tools needs JavaScript turned on.</p></noscript>
 </body>
