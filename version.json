@@ -1,16 +1,16 @@
 {
-  "version": "1.6.0",
-  "file": "TesseractPDFTools-Setup-1.6.0.exe",
+  "version": "1.6.1",
+  "file": "TesseractPDFTools-Setup-1.6.1.exe",
   "size_mb": 30.0,
-  "sha256": "e7e22a799b532921df4ef8ddba5bca728ec861fa0c92079967b081b9d7e0523d",
-  "date": "2026-10-05",
+  "sha256": "5d8bfbed9e895557f631efb52eebd42ed33ac653de00636a6b728b70310b7a74",
+  "date": "2026-10-06",
   "notes": [
-    "Blocks (A): beds, sofas, dining sets, kitchen, bathroom, doors, stairs and more, drawn to the sheet's scale - the scale is read from the title block, picked, or measured",
-    "Turn, flip, resize and stretch blocks; sizes in mm or feet-inches",
-    "Hold the pen still at the end of a stroke to make it a clean line, arrow, box, circle or polygon (replaces Straighten)",
-    "The pen's side button or eraser end rubs out",
-    "Split into Files: by page ranges, every N pages, or back into the files it was combined from",
-    "Move pages to the start or end, Reduce File Size presets with sizes, and a search box for files with many layers",
-    "Drawings made here can be edited in the phone app, and the other way round"
+    "Blocks saved to My blocks on the phone now show here too, and can be moved, turned and resized",
+    "The drawing scale box: the scale found on the sheet is clearly marked, and Enter uses it",
+    "Fit Width no longer shows a stray sideways scroll bar",
+    "From 1.6: Blocks (A) drawn to the sheet's scale, from beds and sofas to doors, stairs and cars",
+    "From 1.6: hold the pen still at the end of a stroke to make a clean line, box, circle or polygon; the pen's eraser end rubs out",
+    "From 1.6: Split into Files, move pages to the start or end, Reduce File Size presets",
+    "From 1.6: drawings made here can be edited in the phone app, and the other way round"
   ]
 }
