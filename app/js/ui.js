@@ -62,7 +62,9 @@ const PATHS = {
   ruler: '<path d="M3 15.5L15.5 3 21 8.5 8.5 21z"/><path d="M7 11.5l2 2M10 8.5l1.5 1.5M13 5.5l2 2"/>',
   size: '<path d="M4 9V4h5"/><path d="M20 15v5h-5"/><path d="M4 4l7 7"/><path d="M20 20l-7-7"/>',
   turn: '<path d="M20 12a8 8 0 11-2.3-5.6"/><path d="M20 4v5h-5"/>',
-  flip: '<path d="M12 3v18"/><path d="M9 7L4 17h5z"/><path d="M15 7l5 10h-5z"/>'
+  flip: '<path d="M12 3v18"/><path d="M9 7L4 17h5z"/><path d="M15 7l5 10h-5z"/>',
+  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'
 };
 
 export function icon(name) {
@@ -88,54 +90,98 @@ export function h(html) {
 
 /* ---------- Layers that close with the Android back button ---------- */
 
-// Each open layer (sheet, dialog, file) has a history entry, so the phone's Back gesture
-// closes the top one. Closing from a button happens straight away; the matching history
-// step runs afterwards, one at a time, so opening something new right after closing
-// something else is safe.
-const stack = [];
-let hDepth = 0;        // layer entries the history will have once pending steps finish
-let inFlight = false;  // a history.go() we started hasn't arrived yet
-let owed = 0;          // entries still to step back over
+// The phone's Back gesture closes the top layer (a file, sheet or dialog).
+// Chrome ignores "back steps" a page adds without a fresh touch (its guard against sites that
+// trap Back), and once that happens the next Back can close the whole app. So the app only adds
+// a step while you're touching it (a layer opened any other way gets its step at your next
+// touch), and when Back has to be refused (unsaved changes, leaving Mark up) it steps forward
+// again instead of adding a new step, which Chrome never ignores.
+const stack = [];        // open layers, bottom to top; layer.entry: it has a history step
+let hDepth = 0;          // the app's history steps, once the moves it started have finished
+let pending = 0;         // history moves started by the app whose popstate hasn't arrived
+let owed = 0;            // steps still to go back after programmatic closes
+let pendingTimer = null;
 
-function syncHistory(depth) {
-  for (let d = depth + 1; d <= stack.length; d++) history.pushState({ depth: d }, "");
-  hDepth = Math.max(depth, stack.length);
+function canPushNow() {
+  const ua = navigator.userActivation;
+  return !ua || ua.isActive;
 }
-
-function flush() {
-  if (inFlight || !owed) return;
-  inFlight = true;
+function entryCount() {
+  let n = 0;
+  for (const l of stack) if (l.entry) n++;
+  return n;
+}
+function go(n) {
+  if (!n) return;
+  pending++;
+  clearTimeout(pendingTimer);
+  // If the browser can't make the move, no popstate comes: don't wait for it forever.
+  pendingTimer = setTimeout(() => { pending = 0; flushOwed(); }, 1500);
+  history.go(n);
+}
+function flushOwed() {
+  if (pending || !owed) return;
   const n = owed;
   owed = 0;
-  history.go(-n);
+  go(-n);
+}
+// Steps forward to give the remaining layers their steps back.
+function restore(n) {
+  if (n <= 0) return;
+  if (window.navigation && window.navigation.canGoForward === false) {
+    // Nothing to step forward to: those layers get new steps at the next touch.
+    for (let i = stack.length - 1; i >= 0 && n > 0; i--) if (stack[i].entry) { stack[i].entry = false; n--; }
+    hDepth = entryCount();
+    return;
+  }
+  hDepth += n;
+  go(n);
+}
+// Gives history steps to the layers on top that don't have one yet.
+function upgrade() {
+  if (pending || owed || !canPushNow()) return;
+  let i = stack.length;
+  while (i > 0 && !stack[i - 1].entry) i--;
+  for (; i < stack.length; i++) {
+    hDepth++;
+    history.pushState({ depth: hDepth }, "");
+    stack[i].entry = true;
+  }
 }
 
 export function initHistory() {
   history.replaceState({ depth: 0 }, "");
   window.addEventListener("popstate", (e) => {
     const depth = (e.state && e.state.depth) || 0;
-    if (inFlight) {
-      inFlight = false;
-      if (owed) flush();
-      else syncHistory(Math.min(depth, stack.length));
+    if (pending) {
+      pending--;
+      if (!pending) { clearTimeout(pendingTimer); flushOwed(); }
       return;
     }
-    // The Back gesture.
-    while (stack.length > depth) {
-      const top = stack[stack.length - 1];
-      if (top.canClose && top.canClose() === false) break;
+    if (depth >= hDepth) { hDepth = depth; return; }
+    // The Back gesture: close the top layer, unless it says not to.
+    hDepth = depth;
+    const top = stack[stack.length - 1];
+    if (top && !(top.canClose && top.canClose() === false)) {
       stack.pop();
       try { top.onClose && top.onClose(); } catch (err) { console.error(err); }
     }
-    syncHistory(Math.min(depth, stack.length));
+    const need = entryCount();
+    if (need > hDepth) restore(need - hDepth);
+    else if (need < hDepth) { owed += hDepth - need; hDepth = need; flushOwed(); }
   });
+  const onTouch = () => setTimeout(upgrade, 0);
+  window.addEventListener("pointerup", onTouch, true);
+  window.addEventListener("keydown", onTouch, true);
 }
 
 export function pushLayer(layer) {
   stack.push(layer);
-  if (!inFlight && !owed) {
-    history.pushState({ depth: stack.length }, "");
-    hDepth = stack.length;
+  layer.entry = false;
+  if (!pending && !owed && canPushNow()) {
+    hDepth++;
+    history.pushState({ depth: hDepth }, "");
+    layer.entry = true;
   }
   return layer;
 }
@@ -144,13 +190,15 @@ export function closeLayer(layer) {
   const i = stack.indexOf(layer);
   if (i < 0) return;
   const closing = stack.splice(i);
+  let n = 0;
   for (let j = closing.length - 1; j >= 0; j--) {
+    if (closing[j].entry) n++;
     try { closing[j].onClose && closing[j].onClose(); } catch (err) { console.error(err); }
   }
-  if (hDepth > stack.length) {
-    owed += hDepth - stack.length;
-    hDepth = stack.length;
-    flush();
+  if (n) {
+    owed += n;
+    hDepth -= n;
+    flushOwed();
   }
 }
 
@@ -209,6 +257,29 @@ export function confirmDialog({ title, message, okText = "OK", cancelText = "Can
       closeLayer(layer);
     }));
     ov.querySelector('[data-r="1"]').focus();
+  });
+}
+
+/** A dialog with several buttons. Resolves the chosen value, or null when dismissed. */
+export function choiceDialog({ title, message, choices }) {
+  return new Promise((resolve) => {
+    let result = null;
+    const ov = h(`<div class="overlay"><div class="scrim"></div>
+      <div class="dialog" role="alertdialog" aria-modal="true">
+        <h2>${esc(title)}</h2>${message ? `<p>${esc(message)}</p>` : ""}
+        <div class="actions choices"></div>
+      </div></div>`);
+    const row = ov.querySelector(".actions");
+    for (const c of choices) {
+      const b = h(`<button class="btn ${c.kind || ""}" type="button">${esc(c.label)}</button>`);
+      b.addEventListener("click", () => { result = c.value; closeLayer(layer); });
+      row.appendChild(b);
+    }
+    document.body.appendChild(ov);
+    const layer = pushLayer({ onClose: () => { ov.remove(); resolve(result); } });
+    ov.querySelector(".scrim").addEventListener("click", () => closeLayer(layer));
+    const primary = row.querySelector(".primary");
+    if (primary) primary.focus();
   });
 }
 

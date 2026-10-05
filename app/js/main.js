@@ -11,9 +11,9 @@ import { openTools } from "./tools.js";
 import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
 import { pickFiles, onIncomingFiles } from "./platform.js";
-import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
+import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
 
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -211,14 +211,29 @@ async function leaveDoc() {
   if (!cur) return true;
   const doc = cur.doc;
   if (doc.dirty && doc.pages.length) {
-    const ok = await confirmDialog({
-      title: "Discard changes?",
-      message: "Your changes to this PDF haven't been saved.",
-      okText: "Discard",
-      cancelText: "Keep editing",
-      danger: true
+    const v = await choiceDialog({
+      title: "Save your changes?",
+      message: `“${doc.name}.pdf” has changes that aren't saved yet.`,
+      choices: [
+        { label: "Cancel", value: null },
+        { label: "Discard", value: "discard", kind: "danger-text" },
+        { label: "Save", value: "save", kind: "primary" }
+      ]
     });
-    if (!ok) return false;
+    if (!v) return false;
+    if (v === "save") {
+      // Save first; the file closes once it has been saved or shared.
+      openSaveSheet(doc, {
+        onSaved: () => {
+          updateDocUi();
+          if (cur && cur.doc === doc && !doc.dirty) {
+            if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
+            closeLayer(cur.layer);
+          }
+        }
+      });
+      return false;
+    }
     doc.dirty = false;
   }
   if (cur && cur.doc === doc) {

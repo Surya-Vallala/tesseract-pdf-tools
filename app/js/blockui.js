@@ -1,7 +1,8 @@
 // Architecture blocks: the library picker and the drawing-scale sheet.
 import { BLOCK_FAMILIES, BLOCK_CATEGORIES, blockTiles, blockParts, sizeText, sizeIn, parseSizeText } from "./blocks.js";
-import { h, esc, icon, openSheet, segmented, promptDialog } from "./ui.js";
+import { h, esc, icon, openSheet, segmented, promptDialog, choiceDialog, confirmDialog, openMenu, toast, busy } from "./ui.js";
 import { settings } from "./platform.js";
+import { aiKey, setAiKey, drawBlock } from "./ai.js";
 
 // Extra words people search with.
 const KEYWORDS = {
@@ -66,8 +67,8 @@ function recent() {
   return Array.isArray(r) ? r : [];
 }
 export function rememberBlock(tile) {
-  const r = recent().filter((x) => !(x.family === tile.family && x.name === tile.name));
-  r.unshift({ family: tile.family, name: tile.name });
+  const r = recent().filter((x) => !(x.family === tile.family && x.name === tile.name && (x.mine || null) === (tile.mine || null)));
+  r.unshift({ family: tile.family, name: tile.name, ...(tile.mine ? { mine: tile.mine } : {}) });
   settings.set("recent-blocks", r.slice(0, 9));
 }
 
@@ -75,53 +76,127 @@ export function rememberBlock(tile) {
  * The "Architecture" pane of the Shapes sheet.
  * onPick(tile) is called with { family, name, w, d, p }.
  */
-export function blockPicker({ onPick, scaleNote, onChangeScale }) {
+/* ---------- My blocks: made with AI or from your own drawing, kept on this phone ---------- */
+
+export function myBlocks() {
+  const r = settings.get("my-blocks", []);
+  return Array.isArray(r) ? r : [];
+}
+function storeMyBlocks(list) {
+  settings.set("my-blocks", list);
+  return settings.get("my-blocks", []).length === list.length;
+}
+/** Saves a block to My blocks. Returns it, or null if the phone's storage is full. */
+export function addMyBlock({ name, w, d, parts, src, prompt }) {
+  const b = { id: "mb" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: (name || "My block").slice(0, 40), w: Math.round(w), d: Math.round(d), parts, src: src || "", prompt: prompt || "" };
+  return storeMyBlocks([b, ...myBlocks()]) ? b : null;
+}
+export function myTile(b) {
+  return { family: "custom", cat: "mine", name: b.name, w: b.w, d: b.d, p: { w0: b.w, d0: b.d, parts: b.parts }, mine: b.id };
+}
+
+/**
+ * The "Architecture" pane of the Shapes sheet.
+ * onPick(tile) is called with { family, name, w, d, p }; onAI(description) and onFromDrawing()
+ * start a new custom block.
+ */
+export function blockPicker({ onPick, scaleNote, onChangeScale, onAI, onFromDrawing }) {
   let units = getUnits();
   let all = blockTiles(units);
-  let rec = recent().map((r) => all.find((t) => t.family === r.family && t.name === r.name)).filter(Boolean);
+  let mine = myBlocks().map(myTile);
+  const findRecent = () => recent().map((r) => (r.mine ? mine.find((t) => t.mine === r.mine) : all.find((t) => t.family === r.family && t.name === r.name))).filter(Boolean);
+  let rec = findRecent();
   let cat = settings.get("blocks-cat", rec.length ? "recent" : "bedroom");
   if (cat === "recent" && !rec.length) cat = "bedroom";
   let query = "";
   const el = h(`<div class="blocks-pane">
-    <label class="block-search">${icon("search")}<input type="search" placeholder="Search blocks, like queen bed or WC" aria-label="Search blocks" enterkeyhint="search"></label>
+    <label class="block-search">${icon("search")}<input type="search" placeholder="Search, or describe a new block" aria-label="Search blocks" enterkeyhint="search"></label>
     <div class="block-cats" role="tablist" aria-label="Block categories"></div>
     <div class="block-grid"></div>
-    <p class="block-empty" hidden>No blocks match that. Try another word.</p>
+    <p class="block-empty" hidden></p>
   </div>`);
   const cats = el.querySelector(".block-cats");
   const grid = el.querySelector(".block-grid");
   const empty = el.querySelector(".block-empty");
   const input = el.querySelector("input");
   const list = [];
-  if (rec.length) list.push({ id: "recent", name: "Recent" });
+  if (rec.length) list.push({ id: "recent", name: "Recent", ic: "clock" });
+  list.push({ id: "mine", name: "My blocks", ic: "star" });
   for (const c of BLOCK_CATEGORIES) list.push({ id: c.id, name: CAT_SHORT[c.id] || c.name });
   for (const c of list) {
-    const b = h(`<button type="button" role="tab" class="block-cat" data-cat="${c.id}">${c.id === "recent" ? icon("clock") : ""}<span>${esc(c.name)}</span></button>`);
+    const b = h(`<button type="button" role="tab" class="block-cat" data-cat="${c.id}">${c.ic ? icon(c.ic) : ""}<span>${esc(c.name)}</span></button>`);
     b.addEventListener("click", () => { cat = c.id; settings.set("blocks-cat", cat); query = ""; input.value = ""; paint(); b.scrollIntoView({ inline: "nearest", block: "nearest" }); });
     cats.appendChild(b);
   }
   input.addEventListener("input", () => { query = input.value.trim().toLowerCase(); paint(); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+  const actionTile = (ic, title, sub, fn) => {
+    const b = h(`<button type="button" class="block-tile action"><span class="act-ic">${icon(ic)}</span><b>${esc(title)}</b><small>${esc(sub)}</small></button>`);
+    b.addEventListener("click", fn);
+    grid.appendChild(b);
+  };
+  function addTile(t) {
+    const b = h(`<button type="button" class="block-tile">${tileSVG(t.family, t.w, t.d, t.p)}<b>${esc(t.name)}</b><small>${sizeText(t.w, t.d, units)}</small></button>`);
+    b.addEventListener("click", () => onPick(t));
+    if (t.mine) {
+      const more = h(`<span class="tile-more" role="button" tabindex="0" aria-label="Rename or delete">${icon("more")}</span>`);
+      more.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const v = await openMenu(more, [{ label: "Rename", value: "rename", icon: "edit" }, { label: "Delete", value: "delete", icon: "trash", danger: true }]);
+        if (v === "rename") {
+          const nm = await promptDialog({ title: "Rename block", value: t.name, okText: "Rename" });
+          if (nm && nm.trim()) {
+            storeMyBlocks(myBlocks().map((x) => (x.id === t.mine ? { ...x, name: nm.trim().slice(0, 40) } : x)));
+            refresh();
+          }
+        } else if (v === "delete") {
+          if (await confirmDialog({ title: `Delete “${t.name}”?`, message: "Blocks already on your drawings stay as they are.", okText: "Delete", danger: true })) {
+            storeMyBlocks(myBlocks().filter((x) => x.id !== t.mine));
+            refresh();
+          }
+        }
+      });
+      b.appendChild(more);
+    }
+    grid.appendChild(b);
+  }
+  function refresh() {
+    mine = myBlocks().map(myTile);
+    rec = findRecent();
+    paint();
+  }
   function paint() {
     cats.querySelectorAll(".block-cat").forEach((b) => {
       const on = !query && b.dataset.cat === cat;
       b.classList.toggle("on", on);
       b.setAttribute("aria-selected", on ? "true" : "false");
     });
-    let tiles;
+    grid.textContent = "";
+    empty.hidden = true;
     if (query) {
       const words = query.split(/\s+/);
-      tiles = all.filter((t) => {
+      const hit = (t) => {
         const hay = `${t.name} ${KEYWORDS[t.family] || ""} ${CAT_SHORT[t.cat] || ""}`.toLowerCase();
         return words.every((w) => hay.includes(w));
-      });
-    } else tiles = cat === "recent" ? rec : all.filter((t) => t.cat === cat);
-    grid.textContent = "";
-    for (const t of tiles) {
-      const b = h(`<button type="button" class="block-tile">${tileSVG(t.family, t.w, t.d, t.p)}<b>${esc(t.name)}</b><small>${sizeText(t.w, t.d, units)}</small></button>`);
-      b.addEventListener("click", () => onPick(t));
-      grid.appendChild(b);
+      };
+      const tiles = [...mine.filter(hit), ...all.filter(hit)];
+      tiles.forEach(addTile);
+      const raw = input.value.trim();
+      if (!tiles.length) { empty.textContent = `Nothing called “${raw}” in the library.`; empty.hidden = false; }
+      if (onAI) actionTile("sparkle", "Create with AI", `“${raw.slice(0, 40)}”`, () => onAI(raw));
+      return;
     }
-    empty.hidden = tiles.length > 0;
+    if (cat === "mine") {
+      if (onAI) actionTile("sparkle", "Create with AI", "Describe it, Claude draws it", async () => {
+        const d = await promptDialog({ title: "Create with AI", message: "Describe the block, like “sliding folding door, 4 panels, 2400 wide”.", placeholder: "Sliding folding door", okText: "Next" });
+        if (d && d.trim()) onAI(d.trim());
+      });
+      if (onFromDrawing) actionTile("select", "From my drawing", "Box marks you've drawn", onFromDrawing);
+      mine.forEach(addTile);
+      if (!mine.length) { empty.textContent = "Blocks you make are kept here, on this phone, and work offline."; empty.hidden = false; }
+      return;
+    }
+    (cat === "recent" ? rec : all.filter((t) => t.cat === cat)).forEach(addTile);
   }
   paint();
   const foot = h(`<div class="block-foot">${icon("ruler")}<span class="grow">${scaleNote} <button type="button" class="link">Change</button></span></div>`);
@@ -130,12 +205,152 @@ export function blockPicker({ onPick, scaleNote, onChangeScale }) {
     units = v;
     setUnits(v);
     all = blockTiles(units);
-    rec = recent().map((r) => all.find((t) => t.family === r.family && t.name === r.name)).filter(Boolean);
+    rec = findRecent();
     paint();
   }, { small: true, label: "Units" });
   foot.appendChild(useg);
   setTimeout(() => { const on = cats.querySelector(".block-cat.on"); if (on) on.scrollIntoView({ inline: "nearest", block: "nearest" }); }, 0);
   return { el, foot };
+}
+
+/* ---------- Creating a block with AI ---------- */
+
+/** Asks for the Claude API key. Resolves true when one is saved. */
+export function openAiSetup() {
+  return new Promise((resolve) => {
+    let saved = false;
+    const has = !!aiKey();
+    const body = h(`<div class="ai-setup">
+      <p class="note" style="margin-top:0">Claude can draw blocks that aren't in the library. It uses your own Claude API key, which is kept only on this phone.</p>
+      <ol class="ai-steps">
+        <li>Open <b>platform.claude.com</b> on a computer or phone and sign in.</li>
+        <li>Add a little credit and set a <b>monthly spend limit</b> under Billing. Each block costs a small amount, billed to that account (separate from a Claude subscription).</li>
+        <li>Under <b>API keys</b>, create a key and paste it below.</li>
+      </ol>
+      <label class="field"><span>Claude API key</span><span class="pw-wrap"><input class="input" type="password" name="k" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"><button type="button" class="ib" aria-label="Show key">${icon("eye")}</button></span></label>
+      <p class="note">Only the words you type to describe a block are sent to Claude, and only after you say yes. Your PDFs and drawings never leave this phone.</p>
+      <p class="form-error" hidden></p>
+    </div>`);
+    const foot = h(`<div class="foot-row">${has ? `<button class="btn danger-outline" type="button" data-remove>Remove key</button>` : `<button class="btn" type="button" data-cancel>Cancel</button>`}<button class="btn primary" type="button" data-ok>Save key</button></div>`);
+    const sheet = openSheet({ title: "AI shapes", body, foot, onClose: () => resolve(saved) });
+    const inp = body.querySelector("input");
+    const err = body.querySelector(".form-error");
+    if (has) inp.placeholder = "A key is saved. Paste a new one to replace it.";
+    body.querySelector(".pw-wrap .ib").addEventListener("click", (e) => {
+      inp.type = inp.type === "password" ? "text" : "password";
+      e.currentTarget.innerHTML = icon(inp.type === "password" ? "eye" : "eyeoff");
+    });
+    foot.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.hasAttribute("data-cancel")) { sheet.close(); return; }
+      if (b.hasAttribute("data-remove")) { setAiKey(""); toast("AI key removed from this phone"); sheet.close(); return; }
+      const k = inp.value.trim();
+      if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(k)) { err.textContent = "That doesn't look like a Claude API key. It starts with sk-ant-."; err.hidden = false; return; }
+      setAiKey(k);
+      saved = true;
+      sheet.close();
+    });
+    setTimeout(() => inp.focus(), 80);
+  });
+}
+
+function previewSVG(r, box = { w: 300, h: 180 }) {
+  const k = Math.max(r.w / box.w, r.d / box.h);
+  const sw = r.w / k, sh = r.d / k;
+  let out = "";
+  for (const part of blockParts("custom", r.w, r.d, { w0: r.w, d0: r.d, parts: r.parts })) {
+    if (part.text) { out += `<text x="${part.x.toFixed(0)}" y="${part.y.toFixed(0)}" font-size="${part.size.toFixed(0)}" text-anchor="middle" dominant-baseline="central" fill="currentColor" font-family="Helvetica, Arial, sans-serif">${esc(part.text)}</text>`; continue; }
+    const dd = part.cmds.map((c) => c[0] + c.slice(1).map((n) => n.toFixed(1)).join(" ")).join("");
+    out += `<path d="${dd}" fill="${part.fill ? "var(--surface, #fff)" : "none"}" stroke="currentColor" stroke-width="1.4" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"${part.dash ? ' stroke-dasharray="5 4"' : ""}/>`;
+  }
+  return `<svg width="${box.w}" height="${box.h}" viewBox="0 0 ${box.w} ${box.h}" aria-hidden="true"><g transform="translate(${((box.w - sw) / 2).toFixed(1)} ${((box.h - sh) / 2).toFixed(1)}) scale(${(1 / k).toFixed(5)})">${out}</g></svg>`;
+}
+
+/**
+ * The whole "Create with AI" flow: key (first time), permission, drawing, preview.
+ * onUse(tile) places the block once it's saved to My blocks.
+ */
+export async function createWithAI(description, { onUse }) {
+  if (!aiKey() && !(await openAiSetup())) return;
+  const ok = await choiceDialog({
+    title: "Create with AI?",
+    message: `This sends only the words “${description}” to Claude, by Anthropic, over the internet. Your drawings and files stay on this phone.`,
+    choices: [{ label: "Not now", value: null }, { label: "Create", value: "go", kind: "primary" }]
+  });
+  if (!ok) return;
+  const units = getUnits();
+  const b = busy(`Claude is drawing “${description.slice(0, 40)}”…`);
+  let r;
+  try {
+    r = await drawBlock(description, { units });
+  } catch (e) {
+    b.close();
+    toast(e.message || "That didn't work. Try again.", { ms: 6000 });
+    if (e.code === "key" || e.code === "nokey") openAiSetup();
+    return;
+  }
+  b.close();
+  openAiPreview(description, r, onUse);
+}
+
+function openAiPreview(description, first, onUse) {
+  let r = first;
+  let name = r.name || description.slice(0, 40);
+  const units = getUnits();
+  const body = h(`<div class="ai-preview">
+    <div class="ai-pic"></div>
+    <label class="field"><span>Name</span><input class="input" name="nm" maxlength="40"></label>
+    <div class="ai-size"><span>Size</span><b></b><button type="button" class="link">Change</button></div>
+    <label class="field"><span>Want changes? Describe them and tap Try again</span><input class="input" name="chg" placeholder="For example: 5 panels instead of 4"></label>
+    <p class="note">Try again sends your words to Claude again. Use it saves the block to My blocks on this phone.</p>
+  </div>`);
+  const pic = body.querySelector(".ai-pic");
+  const sizeB = body.querySelector(".ai-size b");
+  const nm = body.querySelector("[name=nm]");
+  const chg = body.querySelector("[name=chg]");
+  nm.value = name;
+  const paint = () => { pic.innerHTML = previewSVG(r); sizeB.textContent = sizeText(r.w, r.d, units); };
+  paint();
+  body.querySelector(".ai-size .link").addEventListener("click", async () => {
+    const cur = units === "ftin" ? sizeText(r.w, r.d, "ftin").replace(" × ", " x ") : `${Math.round(r.w)} x ${Math.round(r.d)}`;
+    const t = await promptDialog({ title: "Block size", message: units === "ftin" ? "Width x depth, like 8'0\" x 2'0\"." : "Width x depth in mm, like 2400 x 600.", value: cur, okText: "Use", validate: (x) => (parseSizeText(x, units) ? null : "Type two sizes, like 2400 x 600.") });
+    if (t == null) return;
+    const sz = parseSizeText(t, units);
+    const sx = sz.w / r.w, sy = sz.d / r.d;
+    r = { ...r, w: sz.w, d: sz.d, parts: blockParts("custom", sz.w, sz.d, { w0: r.w, d0: r.d, parts: r.parts }) };
+    void sx; void sy;
+    paint();
+  });
+  const foot = h(`<div class="foot-row"><button class="btn" type="button" data-retry>${icon("sparkle")}<span>Try again</span></button><button class="btn primary" type="button" data-use>Use it</button></div>`);
+  const sheet = openSheet({ title: "Your new block", body, foot, tall: true });
+  foot.querySelector("[data-retry]").addEventListener("click", async () => {
+    const btn = foot.querySelector("[data-retry]");
+    btn.disabled = true;
+    const span = btn.querySelector("span");
+    span.textContent = "Drawing…";
+    pic.classList.add("busy");
+    try {
+      const nr = await drawBlock(description, { units, change: chg.value.trim(), history: r.history || [] });
+      if (nm.value.trim() === name && nr.name) { name = nr.name; nm.value = name; }
+      r = nr;
+      chg.value = "";
+      paint();
+    } catch (e) {
+      toast(e.message || "That didn't work. Try again.", { ms: 6000 });
+    } finally {
+      btn.disabled = false;
+      span.textContent = "Try again";
+      pic.classList.remove("busy");
+    }
+  });
+  foot.querySelector("[data-use]").addEventListener("click", () => {
+    const saved = addMyBlock({ name: nm.value.trim() || name, w: r.w, d: r.d, parts: r.parts, src: "ai", prompt: description });
+    if (!saved) { toast("The phone's storage for the app is full. Delete some of My blocks and try again.", { ms: 6000 }); return; }
+    sheet.close();
+    toast("Saved to My blocks");
+    onUse && onUse(myTile(saved));
+  });
 }
 
 /** Looks for "1:100" style scales in a PDF page's text. Returns the most common, or null. */
@@ -225,6 +440,9 @@ export function openScaleSheet({ photo, suggested, current, firstTime }) {
 
 /** Menu items for a block's Size button. */
 export function sizeChoices(it, units = getUnits()) {
+  if (it.family === "custom" && it.p && it.p.w0) {
+    return [{ i: 0, w: it.p.w0, d: it.p.d0, label: `Original · ${sizeText(it.p.w0, it.p.d0, units)}`, checked: Math.abs(it.p.w0 - it.bw) < 2 && Math.abs(it.p.d0 - it.bd) < 2, size: { w: it.p.w0, d: it.p.d0, p: it.p } }];
+  }
   const f = familyOf(it.family);
   if (!f) return [];
   const named = f.sizes.filter((s) => s.name).length > 1;

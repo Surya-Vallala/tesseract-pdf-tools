@@ -12,9 +12,10 @@ import { LINE_KINDS, LABEL_KINDS, CLOSED_KINDS } from "./dgeom.js";
 import { icon, esc, h, segmented, openSheet, promptDialog, openMenu, toast, pushLayer, closeLayer } from "./ui.js";
 import { settings } from "./platform.js";
 import { recognizeShape } from "./snap.js";
-import { sizeText, parseLen, INCH } from "./blocks.js";
+import { sizeText, parseLen, INCH, compactParts } from "./blocks.js";
 import {
-  blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSizeText, familyOf, ratioForK, getUnits, setUnits
+  blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSizeText, familyOf, ratioForK, getUnits, setUnits,
+  createWithAI, addMyBlock, myTile, openAiSetup
 } from "./blockui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
@@ -400,8 +401,13 @@ export class Markup {
       const picker = blockPicker({
         scaleNote: note,
         onPick: (tile) => { sheet.close(); this.placeBlock(tile); },
-        onChangeScale: () => { sheet.close(); if (vit) this.changeScale(vit); }
+        onChangeScale: () => { sheet.close(); if (vit) this.changeScale(vit); },
+        onAI: (desc) => { sheet.close(); createWithAI(desc, { onUse: (tile) => this.placeBlock(tile) }); },
+        onFromDrawing: () => { sheet.close(); this.startPickArea(); }
       });
+      const ai = h(`<button type="button" class="link ai-settings">${icon("sparkle")}<span>AI settings</span></button>`);
+      ai.addEventListener("click", () => { sheet.close(); openAiSetup(); });
+      picker.el.appendChild(ai);
       pane.appendChild(picker.el);
       footBox.appendChild(picker.foot);
     };
@@ -582,6 +588,79 @@ export class Markup {
     return { ux: Math.cos(a), uy: Math.sin(a), vx: -Math.sin(a), vy: Math.cos(a) };
   }
 
+  /* ---------- saving your own marks as a block ---------- */
+
+  startPickArea() {
+    this.stopPickArea();
+    this.select(null);
+    const banner = h(`<div class="measure-banner pick-banner">${icon("select")}<span>Drag a box around the marks to save as a block.</span><button type="button" class="btn small">Cancel</button></div>`);
+    banner.querySelector("button").addEventListener("click", () => closeLayer(layer));
+    this.views.appendChild(banner);
+    const layer = pushLayer({ onClose: () => { banner.remove(); this.picking = null; } });
+    this.picking = { layer };
+  }
+
+  stopPickArea() {
+    if (this.picking) closeLayer(this.picking.layer);
+  }
+
+  async finishPick(g) {
+    const vit = g.vit;
+    const p = vit.p;
+    const [x0, y0] = g.b0, [x1, y1] = g.b1 || g.b0;
+    this.viewer.setLive(g.key, "");
+    const gg = this.viewer.geom(vit);
+    const box = { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
+    const vis = new Map(this.doc.layers.map((l) => [l.id, l.visible]));
+    const items = p.items.filter((it) => {
+      if (it.kind !== "ink" && it.kind !== "shape") return false;
+      if (vis.get(it.layer) === false) return false;
+      const b = itemBounds(it, gg.unit);
+      return b.x0 >= box.x0 && b.x1 <= box.x1 && b.y0 >= box.y0 && b.y1 <= box.y1;
+    });
+    if (!items.length) { toast("No marks are fully inside that box. Try a bigger box.", { ms: 3500 }); return; }
+    const k = await this.ensureScale(vit);
+    if (!k) return;
+    // Work in the page as you see it, so the top of the block is the top of the screen.
+    const m = gg.b2d;
+    const s = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const kd = k * s;
+    const shapes = [], texts = [];
+    let X0 = Infinity, Y0 = Infinity, X1 = -Infinity, Y1 = -Infinity;
+    const grow = (x, y) => { X0 = Math.min(X0, x); Y0 = Math.min(Y0, y); X1 = Math.max(X1, x); Y1 = Math.max(Y1, y); };
+    for (const it of items) {
+      const d = drawableFor(it, gg.unit);
+      for (const path of d.paths) {
+        if (!path.stroke && !(path.fill && /^#fff(fff)?$/i.test(path.fill))) continue;
+        const cmds = path.cmds.map((c) => {
+          if (c[0] === "Z") return c;
+          const o = [c[0]];
+          for (let i = 1; i < c.length; i += 2) { const q = apply(m, c[i], c[i + 1]); o.push(q[0], q[1]); grow(q[0], q[1]); }
+          return o;
+        });
+        shapes.push({ cmds, dash: !!path.dash, fill: !!(path.fill && /^#fff(fff)?$/i.test(path.fill)) });
+      }
+      for (const t of d.texts) {
+        if (!t.text) continue;
+        const q = apply(m, t.x, t.y);
+        grow(q[0], q[1]);
+        texts.push({ text: t.text, x: q[0], y: q[1], size: t.size * s });
+      }
+    }
+    if (!shapes.length) { toast("Those marks can't be made into a block.", { ms: 3000 }); return; }
+    const w = Math.max(20, (X1 - X0) / kd), dd = Math.max(20, (Y1 - Y0) / kd);
+    const parts = [
+      ...shapes.map((sh) => ({ ...sh, cmds: sh.cmds.map((c) => (c[0] === "Z" ? c : [c[0], ...c.slice(1).map((v, i) => (i % 2 ? (v - Y0) / kd : (v - X0) / kd))])) })),
+      ...texts.map((t) => ({ text: t.text, x: (t.x - X0) / kd, y: (t.y - Y0) / kd, size: t.size / kd }))
+    ];
+    const name = await promptDialog({ title: "Save as a block", message: `${items.length} mark${items.length === 1 ? "" : "s"}, ${sizeText(w, dd, getUnits())}${getUnits() === "ftin" ? "" : " mm"}. It goes into My blocks on this phone.`, label: "Name", value: "My block", okText: "Save" });
+    if (name == null) return;
+    const saved = addMyBlock({ name: name.trim() || "My block", w, d: dd, parts: compactParts(parts), src: "drawn" });
+    if (!saved) { toast("The phone's storage for the app is full. Delete some of My blocks and try again.", { ms: 6000 }); return; }
+    this.stopPickArea();
+    toast(`Saved “${saved.name}” to My blocks`);
+  }
+
   /* ---------- measuring to set the scale ---------- */
 
   measure(vit) {
@@ -647,7 +726,7 @@ export class Markup {
       input.addEventListener("input", update);
       this.select(null);
       this.measuring = { place };
-      this.screen.classList.add("measuring");
+        this.screen.classList.add("measuring");
       this.viewer.wrap.appendChild(ui);
       this.views.append(banner, panel);
       place();
@@ -655,7 +734,7 @@ export class Markup {
         onClose: () => {
           ui.remove(); banner.remove(); panel.remove();
           this.measuring = null;
-          this.screen.classList.remove("measuring");
+                this.screen.classList.remove("measuring");
           resolve(result);
         }
       });
@@ -917,9 +996,7 @@ export class Markup {
     if (e.pointerType === "touch") this.touches.add(e.pointerId);
     if (e.pointerType === "pen") this.penSeen = true;
     if (this.touches.size > 1) { this.cancelGesture(); return; }
-    // S Pen with its side button held (or a pen's eraser end) erases, whatever the tool.
-    const penButton = e.pointerType === "pen" && ((e.buttons & 2) || (e.buttons & 32) || e.button === 2 || e.button === 5);
-    if (e.button > 0 && !penButton) return;
+    if (e.button > 0) return;
     if (this.composer) { this.closeComposer(); return; }
     const vit = this.viewer.pageAt(e.clientX, e.clientY);
     if (!vit) return;
@@ -931,12 +1008,9 @@ export class Markup {
       this.g = { ...base, type: "pan" };
       return this.capture(e);
     }
-    if (penButton) {
-      if (this.composer) this.closeComposer();
-      if (this.sel) this.select(null);
-      this.g = { ...base, type: "erase", erased: 0, viaButton: true };
-      this.eraseAt(vit, bx, by);
-      this.showEraser(this.g, bx, by);
+    if (this.picking) {
+      if (fingerScrolls) { this.g = { ...base, type: "pan" }; return this.capture(e); }
+      this.g = { ...base, type: "pickbox", b1: [bx, by] };
       return this.capture(e);
     }
 
@@ -1004,13 +1078,6 @@ export class Markup {
     const [bx, by] = this.viewer.toBase(g.vit, last.clientX, last.clientY);
     g.b1 = [bx, by];
     const unit = this.viewer.geom(g.vit).unit;
-    if (g.type === "ink" && e.pointerType === "pen" && (e.buttons & 34) && g.pts.length < 40) {
-      clearTimeout(g.holdTimer);
-      g.type = "erase";
-      g.erased = 0;
-      g.viaButton = true;
-      this.viewer.setLive(g.key, "");
-    }
     if (g.type === "ink" && g.snap) return;
     if (g.type === "ink" && Math.hypot(last.clientX - g.hold.x, last.clientY - g.hold.y) > 5) {
       g.hold = { x: last.clientX, y: last.clientY };
@@ -1035,6 +1102,9 @@ export class Markup {
         this.eraseAt(g.vit, x, y);
       }
       this.showEraser(g, bx, by);
+    } else if (g.type === "pickbox") {
+      const [x0, y0] = g.b0;
+      this.viewer.setLive(g.key, `<rect x="${Math.min(x0, bx)}" y="${Math.min(y0, by)}" width="${Math.abs(bx - x0)}" height="${Math.abs(by - y0)}" fill="rgba(31,78,121,0.08)" stroke="#1F4E79" stroke-dasharray="${unit * 0.006}" stroke-width="${unit * 0.0015}"/>`);
     } else if (g.type === "blur") {
       const [x0, y0] = g.b0;
       this.viewer.setLive(g.key, `<rect x="${Math.min(x0, bx)}" y="${Math.min(y0, by)}" width="${Math.abs(bx - x0)}" height="${Math.abs(by - y0)}" fill="rgba(31,78,121,0.15)" stroke="#1F4E79" stroke-dasharray="${unit * 0.006}" stroke-width="${unit * 0.0015}"/>`);
@@ -1085,6 +1155,8 @@ export class Markup {
       p.items.push({ ...this.inkItem(pts, unit), id: newId(), layer: layer.id });
       this.updateChip();
       this.changed();
+    } else if (g.type === "pickbox") {
+      this.finishPick(g);
     } else if (g.type === "erase") {
       this.viewer.setLive(g.key, "");
       if (g.erased) this.changed();
