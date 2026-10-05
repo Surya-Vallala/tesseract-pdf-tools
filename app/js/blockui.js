@@ -1,5 +1,5 @@
 // Architecture blocks: the library picker and the drawing-scale sheet.
-import { BLOCK_FAMILIES, BLOCK_CATEGORIES, blockTiles, blockParts, sizeText } from "./blocks.js";
+import { BLOCK_FAMILIES, BLOCK_CATEGORIES, blockTiles, blockParts, sizeText, sizeIn, parseSizeText } from "./blocks.js";
 import { h, esc, icon, openSheet, segmented, promptDialog } from "./ui.js";
 import { settings } from "./platform.js";
 
@@ -32,6 +32,14 @@ export function ratioForK(k) {
   const n = 72 / (25.4 * k);
   for (const s of STANDARD_SCALES) if (Math.abs(n - s) / s < 0.015) return s;
   return Math.round(n);
+}
+
+/** "mm" or "ftin", remembered on this phone. */
+export function getUnits() {
+  return settings.get("units", "mm") === "ftin" ? "ftin" : "mm";
+}
+export function setUnits(u) {
+  settings.set("units", u === "ftin" ? "ftin" : "mm");
 }
 
 export function familyOf(id) {
@@ -68,8 +76,9 @@ export function rememberBlock(tile) {
  * onPick(tile) is called with { family, name, w, d, p }.
  */
 export function blockPicker({ onPick, scaleNote, onChangeScale }) {
-  const all = blockTiles();
-  const rec = recent().map((r) => all.find((t) => t.family === r.family && t.name === r.name)).filter(Boolean);
+  let units = getUnits();
+  let all = blockTiles(units);
+  let rec = recent().map((r) => all.find((t) => t.family === r.family && t.name === r.name)).filter(Boolean);
   let cat = settings.get("blocks-cat", rec.length ? "recent" : "bedroom");
   if (cat === "recent" && !rec.length) cat = "bedroom";
   let query = "";
@@ -108,15 +117,23 @@ export function blockPicker({ onPick, scaleNote, onChangeScale }) {
     } else tiles = cat === "recent" ? rec : all.filter((t) => t.cat === cat);
     grid.textContent = "";
     for (const t of tiles) {
-      const b = h(`<button type="button" class="block-tile">${tileSVG(t.family, t.w, t.d, t.p)}<b>${esc(t.name)}</b><small>${sizeText(t.w, t.d)}</small></button>`);
+      const b = h(`<button type="button" class="block-tile">${tileSVG(t.family, t.w, t.d, t.p)}<b>${esc(t.name)}</b><small>${sizeText(t.w, t.d, units)}</small></button>`);
       b.addEventListener("click", () => onPick(t));
       grid.appendChild(b);
     }
     empty.hidden = tiles.length > 0;
   }
   paint();
-  const foot = h(`<div class="block-foot">${icon("ruler")}<span class="grow">${scaleNote}</span><button type="button" class="link">Change scale</button></div>`);
-  foot.querySelector("button").addEventListener("click", onChangeScale);
+  const foot = h(`<div class="block-foot">${icon("ruler")}<span class="grow">${scaleNote} <button type="button" class="link">Change</button></span></div>`);
+  foot.querySelector(".link").addEventListener("click", onChangeScale);
+  const useg = segmented([{ value: "mm", label: "mm" }, { value: "ftin", label: "ft-in" }], units, (v) => {
+    units = v;
+    setUnits(v);
+    all = blockTiles(units);
+    rec = recent().map((r) => all.find((t) => t.family === r.family && t.name === r.name)).filter(Boolean);
+    paint();
+  }, { small: true, label: "Units" });
+  foot.appendChild(useg);
   setTimeout(() => { const on = cats.querySelector(".block-cat.on"); if (on) on.scrollIntoView({ inline: "nearest", block: "nearest" }); }, 0);
   return { el, foot };
 }
@@ -207,22 +224,21 @@ export function openScaleSheet({ photo, suggested, current, firstTime }) {
 }
 
 /** Menu items for a block's Size button. */
-export function sizeChoices(it) {
+export function sizeChoices(it, units = getUnits()) {
   const f = familyOf(it.family);
   if (!f) return [];
   const named = f.sizes.filter((s) => s.name).length > 1;
-  return f.sizes.map((s, i) => ({
-    i,
-    label: named && s.name ? `${s.name.replace(/ (bed|sofa|dining)$/i, "")} · ${sizeText(s.w, s.d)}` : sizeText(s.w, s.d),
-    checked: Math.round(s.w) === Math.round(it.bw) && Math.round(s.d) === Math.round(it.bd) && JSON.stringify(s.p || null) === JSON.stringify(it.p || null),
-    size: s
-  }));
+  return f.sizes.map((s, i) => {
+    const [w, d] = sizeIn(f, s, units);
+    return {
+      i, w, d,
+      label: named && s.name ? `${s.name.replace(/ (bed|sofa|dining)$/i, "")} · ${sizeText(w, d, units)}` : sizeText(w, d, units),
+      checked: Math.abs(w - it.bw) < 2 && Math.abs(d - it.bd) < 2 && JSON.stringify(s.p || null) === JSON.stringify(it.p || null),
+      size: s
+    };
+  });
 }
 
-export function parseSize(text) {
-  const m = /^\s*(\d{2,5})\s*(?:[x×*,]|\s)\s*(\d{2,5})\s*$/i.exec(text || "");
-  if (!m) return null;
-  return { w: Number(m[1]), d: Number(m[2]) };
-}
+export { parseSizeText };
 
 export { segmented, BLOCK_FAMILIES };

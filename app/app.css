@@ -811,3 +811,13 @@ button { font: inherit; color: inherit; }
 .measure-panel .m-note { margin: 8px 0 0; min-height: 18px; font-size: 13px; color: var(--muted); }
 .measure-panel [data-cancel] { margin-top: 2px; padding-left: 0; }
 .doc.measuring .optbar, .doc.measuring .toolbar, .doc.measuring .markbar { display: none !important; }
+
+/* Thickness slider and eraser size */
+.pop-label.thick-head { display: flex; align-items: baseline; justify-content: space-between; }
+.thick-val { font-weight: 600; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.thick-slider { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.thick-preview { width: 100%; height: 34px; display: block; }
+.thick-slider input[type=range], .eraser-size input[type=range] { width: 100%; height: 32px; margin: 0; accent-color: var(--accent); }
+.eraser-size { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding-left: 4px; }
+.eraser-size .ring { flex: none; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 50%; background: var(--accent-soft); }
+.eraser-size input { flex: 1; min-width: 0; }

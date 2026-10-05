@@ -5,6 +5,31 @@ import { blockParts } from "./blocks.js";
 import { mul, apply } from "./geom.js";
 
 export const THICKNESS = { fine: 0.0012, medium: 0.0025, thick: 0.005 };
+
+// Thickness is a level from 1 (finest) to 10 (thickest), as a share of the sheet size so
+// lines look the same on A1 and A4. Older settings used fine / medium / thick.
+const OLD_LEVEL = { fine: 3, medium: 6, thick: 8 };
+export function levelOf(t) {
+  if (typeof t === "number" && isFinite(t)) return Math.max(1, Math.min(10, Math.round(t)));
+  return OLD_LEVEL[t] || 6;
+}
+export function thickFactor(t) {
+  return 0.0006 * Math.pow(1.35, levelOf(t) - 1);
+}
+/** The level nearest to a line width w (base units) on a page with this unit. */
+export function levelForWidth(w, unit, mult = 1) {
+  const r = w / (unit * mult);
+  let best = 6, bd = Infinity;
+  for (let l = 1; l <= 10; l++) {
+    const d = Math.abs(Math.log(r / thickFactor(l)));
+    if (d < bd) { bd = d; best = l; }
+  }
+  return best;
+}
+/** Bar height in px used to preview a level in buttons. */
+export function levelPx(t) {
+  return Math.max(1, Math.round(levelOf(t) * 0.85));
+}
 export const PEN_KIND = {
   pen: { mult: 1, opacity: 1 },
   marker: { mult: 2.6, opacity: 0.85 },

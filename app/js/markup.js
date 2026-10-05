@@ -4,16 +4,16 @@
 import { newId } from "./doc.js";
 import { apply, inv, bbox, distToPolyline, distToSeg } from "./geom.js";
 import {
-  THICKNESS, PEN_KIND, PEN_COLORS, HIGHLIGHT_COLORS, COMMENT_COLORS, SHAPE_NAMES,
+  PEN_KIND, PEN_COLORS, HIGHLIGHT_COLORS, COMMENT_COLORS, SHAPE_NAMES, thickFactor, levelOf, levelForWidth, levelPx,
   inkDrawable, shapeDrawable, commentDrawable, drawableToSVG, drawableFor, itemBounds,
   smoothPoints, thinPoints, blockMatrix
 } from "./shapes.js";
 import { icon, esc, h, segmented, openSheet, promptDialog, openMenu, toast, pushLayer, closeLayer } from "./ui.js";
 import { settings } from "./platform.js";
 import { recognizeShape } from "./snap.js";
-import { sizeText } from "./blocks.js";
+import { sizeText, parseLen, INCH } from "./blocks.js";
 import {
-  blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSize, familyOf, ratioForK
+  blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSizeText, familyOf, ratioForK, getUnits, setUnits
 } from "./blockui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
@@ -40,6 +40,7 @@ export class Markup {
     if (this.pen.snap == null) this.pen.snap = true;
     delete this.pen.straighten;
     this.block = settings.get("block", { color: "#1565C0", thick: "fine", fill: false });
+    this.eraser = settings.get("eraser", { size: 28, mode: "whole" });
     this.shape = settings.get("shape", { shape: "rect", color: "#1565C0", thick: "medium", fill: false, sides: 6 });
     this.comment = settings.get("comment", { ctype: "box", color: COMMENT_COLORS[0], cloud: true });
     this.penSeen = false;
@@ -53,6 +54,7 @@ export class Markup {
     root.addEventListener("pointermove", (e) => this.move(e));
     root.addEventListener("pointerup", (e) => this.up(e));
     root.addEventListener("pointercancel", (e) => this.up(e, true));
+    root.addEventListener("contextmenu", (e) => { if (this.active) e.preventDefault(); });
     toolbar.addEventListener("click", (e) => {
       const b = e.target.closest("[data-tool]");
       if (b) this.setTool(b.dataset.tool, { fromBar: true });
@@ -147,9 +149,20 @@ export class Markup {
       ], this.pen.type, (v) => { this.pen.type = v; this.savePrefs(); this.renderOptions(); }, { label: "Pen type" }));
       o.appendChild(h(`<span class="grow"></span>`));
       const col = this.pen.type === "highlighter" ? this.pen.hcolor : this.pen.color;
-      o.appendChild(this.styleButton(col, { fine: 2, medium: 4, thick: 7 }[this.pen.thick], (e) => this.openPenStyle(e.currentTarget), "Pen colour and thickness"));
+      o.appendChild(this.styleButton(col, levelPx(this.pen.thick), (e) => this.openPenStyle(e.currentTarget), "Pen colour and thickness"));
     } else if (tool === "eraser") {
-      o.appendChild(h(`<p class="opt-note">Drag over your marks to erase them.</p>`));
+      const seg = segmented([{ value: "whole", label: "Whole marks" }, { value: "part", label: "Part of a line" }], this.eraser.mode,
+        (v) => { this.eraser.mode = v; this.savePrefs(); }, { label: "Eraser mode" });
+      seg.classList.add("tight");
+      o.appendChild(seg);
+      const sz = h(`<label class="eraser-size"><span class="ring" aria-hidden="true"></span><input type="range" min="10" max="80" step="2" aria-label="Eraser size"></label>`);
+      const ring = sz.querySelector(".ring"), rng = sz.querySelector("input");
+      rng.value = this.eraser.size;
+      const paint = () => { const d = Math.min(30, Math.max(8, this.eraser.size * 0.42)); ring.style.width = ring.style.height = d + "px"; };
+      paint();
+      rng.addEventListener("input", () => { this.eraser.size = Number(rng.value); paint(); });
+      rng.addEventListener("change", () => this.savePrefs());
+      o.appendChild(sz);
     } else if (tool === "blur") {
       o.appendChild(h(`<p class="opt-note">Drag over anything to hide it. It's blurred for good when you save.</p>`));
     } else if (tool === "shapes") {
@@ -184,17 +197,17 @@ export class Markup {
         if (selItem.kind === "ink") {
           const pal = selItem.pen === "highlighter" ? HIGHLIGHT_COLORS : PEN_COLORS;
           const thick = this.thickOf(selItem);
-          o.appendChild(this.styleButton(selItem.color, { fine: 2, medium: 4, thick: 7 }[thick], (e) => this.openStylePicker(e.currentTarget, {
-            colors: pal, color: selItem.color, thick,
+          o.appendChild(this.styleButton(selItem.color, levelPx(thick), (e) => this.openStylePicker(e.currentTarget, {
+            colors: pal, color: selItem.color, thick, mult: (PEN_KIND[selItem.pen] || PEN_KIND.pen).mult,
             onChange: ({ color, thick: t }) => this.editSelected((it) => {
               if (color) it.color = color;
-              if (t) it.w = THICKNESS[t] * this.unitFor(this.sel.key) * (PEN_KIND[it.pen] || PEN_KIND.pen).mult;
+              if (t) it.w = thickFactor(t) * this.unitFor(this.sel.key) * (PEN_KIND[it.pen] || PEN_KIND.pen).mult;
             })
           }), "Colour and thickness"));
         } else {
           this.appendShapeStyle(o, { color: selItem.color, thick: this.thickOf(selItem), fill: selItem.fill, shape: selItem.shape, sides: selItem.sides }, (patch) => this.editSelected((it) => {
             if (patch.color) it.color = patch.color;
-            if (patch.thick) it.w = THICKNESS[patch.thick] * this.unitFor(this.sel.key);
+            if (patch.thick) it.w = thickFactor(patch.thick) * this.unitFor(this.sel.key);
             if (patch.fill != null) it.fill = patch.fill;
             if (patch.sides) it.sides = patch.sides;
           }));
@@ -226,7 +239,7 @@ export class Markup {
   }
 
   appendShapeStyle(o, st, onPatch) {
-    o.appendChild(this.styleButton(st.color, { fine: 2, medium: 4, thick: 7 }[st.thick] || 4, (e) => this.openStylePicker(e.currentTarget, {
+    o.appendChild(this.styleButton(st.color, levelPx(st.thick), (e) => this.openStylePicker(e.currentTarget, {
       colors: PEN_COLORS, color: st.color, thick: st.thick,
       onChange: (p) => onPatch(p)
     }), "Colour and thickness"));
@@ -247,10 +260,7 @@ export class Markup {
   thickOf(it) {
     const unit = this.unitFor(this.sel ? this.sel.key : null);
     const mult = it.kind === "ink" ? (PEN_KIND[it.pen] || PEN_KIND.pen).mult : 1;
-    const r = it.w / (unit * mult);
-    let best = "medium", bd = Infinity;
-    for (const [k, v] of Object.entries(THICKNESS)) { const d = Math.abs(Math.log(r / v)); if (d < bd) { bd = d; best = k; } }
-    return best;
+    return levelForWidth(it.w, unit, mult);
   }
 
   unitFor(key) {
@@ -263,6 +273,7 @@ export class Markup {
     settings.set("shape", this.shape);
     settings.set("comment", this.comment);
     settings.set("block", this.block);
+    settings.set("eraser", this.eraser);
   }
 
   openPenStyle(anchor) {
@@ -271,6 +282,7 @@ export class Markup {
       colors: hl ? HIGHLIGHT_COLORS : PEN_COLORS,
       color: hl ? this.pen.hcolor : this.pen.color,
       thick: this.pen.thick,
+      mult: (PEN_KIND[this.pen.type] || PEN_KIND.pen).mult,
       toggles: [
         { key: "smooth", label: "Smooth strokes", on: this.pen.smooth },
         { key: "snap", label: "Hold still at the end to make a clean shape", on: this.pen.snap !== false },
@@ -286,11 +298,15 @@ export class Markup {
     });
   }
 
-  openStylePicker(anchor, { colors, color, thick, toggles = [], onChange }) {
+  openStylePicker(anchor, { colors, color, thick, mult = 1, toggles = [], onChange }) {
     if (this.pop) this.pop.close();
+    let level = levelOf(thick);
+    let col = color;
     const pop = h(`<div class="pop" role="dialog" aria-label="Colour and thickness">
       <div class="pop-label">Colour</div><div class="swatches" role="radiogroup" aria-label="Colour"></div>
-      <div class="pop-label">Thickness</div><div class="thick-row"></div>
+      <div class="pop-label thick-head"><span>Thickness</span><b class="thick-val"></b></div>
+      <div class="thick-slider"><svg class="thick-preview" viewBox="0 0 240 32" preserveAspectRatio="none" aria-hidden="true"><path d="M8 20 C 60 4, 110 30, 160 14 S 220 10, 232 16" fill="none" stroke-linecap="round"/></svg>
+        <input type="range" min="1" max="10" step="1" aria-label="Thickness"></div>
       <p class="pop-note">Thickness follows the sheet size, so lines look the same on A1 and A4.</p>
       <div class="pop-toggles"></div></div>`);
     const sw = pop.querySelector(".swatches");
@@ -298,19 +314,25 @@ export class Markup {
       const b = h(`<button type="button" role="radio" class="sw big${c === color ? " on" : ""}" style="--c:${c}" aria-checked="${c === color}" aria-label="Colour ${c}"></button>`);
       b.addEventListener("click", () => {
         sw.querySelectorAll(".sw").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); });
+        col = c;
+        paintThick();
         onChange({ color: c });
       });
       sw.appendChild(b);
     });
-    const tr = pop.querySelector(".thick-row");
-    [["fine", "Fine", 2], ["medium", "Medium", 4], ["thick", "Thick", 7]].forEach(([k, label, px]) => {
-      const b = h(`<button type="button" class="thick${k === thick ? " on" : ""}" aria-pressed="${k === thick}"><span style="height:${px}px"></span>${label}</button>`);
-      b.addEventListener("click", () => {
-        tr.querySelectorAll(".thick").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", x === b); });
-        onChange({ thick: k });
-      });
-      tr.appendChild(b);
-    });
+    const range = pop.querySelector(".thick-slider input");
+    const prev = pop.querySelector(".thick-preview path");
+    const val = pop.querySelector(".thick-val");
+    range.value = level;
+    const paintThick = () => {
+      prev.setAttribute("stroke", col);
+      prev.setAttribute("stroke-width", Math.min(26, levelPx(level) * 1.25 * Math.min(mult, 3.2)));
+      prev.setAttribute("stroke-opacity", mult > 5 ? 0.45 : 1);
+      val.textContent = `${level} of 10`;
+    };
+    paintThick();
+    range.addEventListener("input", () => { level = Number(range.value); paintThick(); });
+    range.addEventListener("change", () => { level = Number(range.value); paintThick(); onChange({ thick: level }); });
     const tg = pop.querySelector(".pop-toggles");
     for (const t of toggles) {
       const b = h(`<button type="button" role="switch" class="pop-toggle" aria-checked="${t.on}"><span>${esc(t.label)}</span><span class="switch${t.on ? " on" : ""}"></span></button>`);
@@ -367,7 +389,7 @@ export class Markup {
       const vit = this.centerPage();
       const k = vit && vit.p.blockK;
       const photo = vit && this.doc.src(vit.p).kind === "image";
-      const note = k ? `Drawn to real size at <b>${photo ? "your measured scale" : "1:" + ratioForK(k)}</b>. Sizes in mm.` : "Drawn to real size. Sizes in mm. You'll set the scale once.";
+      const note = k ? `Real size at <b>${photo ? "your measured scale" : "1:" + ratioForK(k)}</b>.` : "Real size. You'll set the scale once.";
       const picker = blockPicker({
         scaleNote: note,
         onPick: (tile) => { sheet.close(); this.placeBlock(tile); },
@@ -449,7 +471,7 @@ export class Markup {
     const it = {
       id: newId(), kind: "shape", shape: "block", family: tile.family, name: tile.name, bw: tile.w, bd: tile.d, p: tile.p ? structuredClone(tile.p) : null,
       x1: cx, y1: cy, x2: cx, y2: cy, rot: (360 - g.R) % 360, flip: false, k,
-      color: this.block.color, w: THICKNESS[this.block.thick] * g.unit, fill: !!this.block.fill, text: "", layer: layer.id
+      color: this.block.color, w: thickFactor(this.block.thick) * g.unit, fill: !!this.block.fill, text: "", layer: layer.id
     };
     vit.p.items.push(it);
     rememberBlock(tile);
@@ -463,12 +485,12 @@ export class Markup {
 
   appendBlockOptions(o, it) {
     const thick = this.thickOf(it);
-    o.appendChild(this.styleButton(it.color, { fine: 2, medium: 4, thick: 7 }[thick], (e) => this.openStylePicker(e.currentTarget, {
+    o.appendChild(this.styleButton(it.color, levelPx(thick), (e) => this.openStylePicker(e.currentTarget, {
       colors: PEN_COLORS, color: it.color, thick,
       onChange: ({ color, thick: t }) => {
         this.editSelected((x) => {
           if (color) x.color = color;
-          if (t) x.w = THICKNESS[t] * this.unitFor(this.sel.key);
+          if (t) x.w = thickFactor(t) * this.unitFor(this.sel.key);
         });
         if (color) this.block.color = color;
         if (t) this.block.thick = t;
@@ -495,29 +517,41 @@ export class Markup {
   async blockSize(anchor) {
     const it = this.selectedItem();
     if (!it) return;
-    const choices = sizeChoices(it);
+    const units = getUnits();
+    const choices = sizeChoices(it, units);
     const v = await openMenu(anchor, [
       ...choices.map((c) => ({ label: c.label, value: "s" + c.i, checked: c.checked })),
       { divider: true },
-      { label: "Custom size…", value: "custom" }
+      { label: "Custom size…", value: "custom" },
+      { label: units === "ftin" ? "Show sizes in mm" : "Show sizes in feet and inches", value: "units" }
     ], { align: "start" });
     if (!v) return;
+    if (v === "units") {
+      setUnits(units === "ftin" ? "mm" : "ftin");
+      this.drawSelection();
+      toast(units === "ftin" ? "Sizes now in mm" : "Sizes now in feet and inches", { ms: 2000 });
+      return;
+    }
     let w, d, pp = it.p, name = it.name;
     if (v === "custom") {
       const f = familyOf(it.family);
+      const ft = units === "ftin";
+      const cur = ft ? sizeText(it.bw, it.bd, "ftin").replace(" × ", " x ") : `${Math.round(it.bw)} x ${Math.round(it.bd)}`;
       const t = await promptDialog({
         title: "Custom size",
-        message: f && f.box ? "Width in mm." : "Width × depth in mm, like 1500 x 2000.",
-        value: f && f.box ? String(Math.round(it.bw)) : `${Math.round(it.bw)} x ${Math.round(it.bd)}`,
+        message: f && f.box
+          ? (ft ? "Width, like 3'0\" or 900 mm." : "Width in mm, like 900, or in feet like 3'0\".")
+          : (ft ? "Width x depth, like 5'0\" x 6'6\". Plain numbers are inches; add mm for millimetres." : "Width x depth in mm, like 1500 x 2000. Feet and inches work too, like 5'0\" x 6'6\"."),
+        value: f && f.box ? cur.split(" x ")[0] : cur,
         okText: "Use",
-        validate: (x) => (f && f.box ? (/^\s*\d{2,5}\s*$/.test(x) ? null : "Type the width, like 900.") : parseSize(x) ? null : "Type two sizes, like 1500 x 2000.")
+        validate: (x) => (f && f.box ? (parseLen(x, units) > 50 ? null : "Type the width, like 900 or 3'0\".") : parseSizeText(x, units) ? null : "Type two sizes, like 1500 x 2000 or 5'0\" x 6'6\".")
       });
       if (t == null) return;
-      if (f && f.box) { w = Number(t); d = f.box(w)[1]; }
-      else ({ w, d } = parseSize(t));
+      if (f && f.box) { w = parseLen(t, units); d = f.box(w)[1]; }
+      else ({ w, d } = parseSizeText(t, units));
     } else {
       const c = choices[Number(v.slice(1))];
-      w = c.size.w; d = c.size.d; pp = c.size.p ? structuredClone(c.size.p) : null;
+      w = c.w; d = c.d; pp = c.size.p ? structuredClone(c.size.p) : null;
       if (c.size.name) name = c.size.name;
     }
     this.editSelected((x) => this.resizeBlock(x, w, d, pp, name));
@@ -550,7 +584,7 @@ export class Markup {
       const banner = h(`<div class="measure-banner">${icon("ruler")}<span>Drag the two ends onto something you know the length of, like a door opening. Pinch to zoom in for accuracy.</span></div>`);
       const panel = h(`<form class="measure-panel" autocomplete="off">
         <label for="m-len">How long is this?</label>
-        <div class="m-row"><span class="m-input"><input id="m-len" inputmode="numeric" enterkeyhint="done" placeholder="900"><em>mm</em></span><button type="submit" class="btn primary">Set scale</button></div>
+        <div class="m-row"><span class="m-input"><input id="m-len" inputmode="${getUnits() === "ftin" ? "text" : "decimal"}" enterkeyhint="done" placeholder="${getUnits() === "ftin" ? "3'0\"" : "900"}"><em>${getUnits() === "ftin" ? "ft-in" : "mm"}</em></span><button type="submit" class="btn primary">Set scale</button></div>
         <p class="m-note"></p>
         <button type="button" class="btn link-btn" data-cancel>Cancel</button></form>`);
       const input = panel.querySelector("input");
@@ -558,7 +592,7 @@ export class Markup {
       let result = null;
       const update = () => {
         const L = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
-        const mm = Number(input.value);
+        const mm = parseLen(input.value, getUnits());
         if (mm > 0 && L > 0) {
           const k = L / mm;
           note.textContent = photo ? "Blocks on this photo will use this length." : `That works out to about 1:${ratioForK(k)}.`;
@@ -617,8 +651,8 @@ export class Markup {
       panel.addEventListener("submit", (e) => {
         e.preventDefault();
         const L = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
-        const mm = Number(input.value);
-        if (!(mm > 0) || !(L > 0)) { note.textContent = "Type the real length in mm, like 900."; input.focus(); return; }
+        const mm = parseLen(input.value, getUnits());
+        if (!(mm > 0) || !(L > 0)) { note.textContent = getUnits() === "ftin" ? "Type the real length, like 3'0\" or 900mm." : "Type the real length in mm, like 900, or in feet like 3'0\"."; input.focus(); return; }
         result = L / mm;
         closeLayer(layer);
       });
@@ -681,7 +715,7 @@ export class Markup {
       const ccx = (cs[0][0] + cs[2][0]) / 2, ccy = (cs[0][1] + cs[2][1]) / 2;
       ui.appendChild(h(`<div class="selbox" style="left:${ccx - bw / 2}px;top:${ccy - bh / 2}px;width:${bw}px;height:${bh}px;transform:rotate(${ang}deg)"></div>`));
       pillY = Math.max(...cs.map((c) => c[1])) + 10;
-      ui.appendChild(h(`<span class="dim-pill" style="left:${ccx}px;top:${pillY}px">${sizeText(item.bw, item.bd)}</span>`));
+      ui.appendChild(h(`<span class="dim-pill" style="left:${ccx}px;top:${pillY}px">${sizeText(item.bw, item.bd, getUnits())}</span>`));
       pillY += 30;
     } else {
       ui.appendChild(h(`<div class="selbox" style="left:${L}px;top:${T}px;width:${W}px;height:${H}px"></div>`));
@@ -854,7 +888,9 @@ export class Markup {
     if (e.pointerType === "touch") this.touches.add(e.pointerId);
     if (e.pointerType === "pen") this.penSeen = true;
     if (this.touches.size > 1) { this.cancelGesture(); return; }
-    if (e.button > 0) return;
+    // S Pen with its side button held (or a pen's eraser end) erases, whatever the tool.
+    const penButton = e.pointerType === "pen" && ((e.buttons & 2) || (e.buttons & 32) || e.button === 2 || e.button === 5);
+    if (e.button > 0 && !penButton) return;
     if (this.composer) { this.closeComposer(); return; }
     const vit = this.viewer.pageAt(e.clientX, e.clientY);
     if (!vit) return;
@@ -864,6 +900,14 @@ export class Markup {
     let tool = this.tool;
     if (this.measuring) {
       this.g = { ...base, type: "pan" };
+      return this.capture(e);
+    }
+    if (penButton) {
+      if (this.composer) this.closeComposer();
+      if (this.sel) this.select(null);
+      this.g = { ...base, type: "erase", erased: 0, viaButton: true };
+      this.eraseAt(vit, bx, by);
+      this.showEraser(this.g, bx, by);
       return this.capture(e);
     }
 
@@ -897,6 +941,7 @@ export class Markup {
     } else if (tool === "eraser") {
       this.g = { ...base, type: "erase", erased: 0 };
       this.eraseAt(vit, bx, by);
+      this.showEraser(this.g, bx, by);
     } else if (tool === "blur") {
       this.g = { ...base, type: "blur", b1: [bx, by] };
     } else if (tool === "shapes") {
@@ -930,6 +975,13 @@ export class Markup {
     const [bx, by] = this.viewer.toBase(g.vit, last.clientX, last.clientY);
     g.b1 = [bx, by];
     const unit = this.viewer.geom(g.vit).unit;
+    if (g.type === "ink" && e.pointerType === "pen" && (e.buttons & 34) && g.pts.length < 40) {
+      clearTimeout(g.holdTimer);
+      g.type = "erase";
+      g.erased = 0;
+      g.viaButton = true;
+      this.viewer.setLive(g.key, "");
+    }
     if (g.type === "ink" && g.snap) return;
     if (g.type === "ink" && Math.hypot(last.clientX - g.hold.x, last.clientY - g.hold.y) > 5) {
       g.hold = { x: last.clientX, y: last.clientY };
@@ -953,6 +1005,7 @@ export class Markup {
         const [x, y] = this.viewer.toBase(g.vit, ev.clientX, ev.clientY);
         this.eraseAt(g.vit, x, y);
       }
+      this.showEraser(g, bx, by);
     } else if (g.type === "blur") {
       const [x0, y0] = g.b0;
       this.viewer.setLive(g.key, `<rect x="${Math.min(x0, bx)}" y="${Math.min(y0, by)}" width="${Math.abs(bx - x0)}" height="${Math.abs(by - y0)}" fill="rgba(31,78,121,0.15)" stroke="#1F4E79" stroke-dasharray="${unit * 0.006}" stroke-width="${unit * 0.0015}"/>`);
@@ -1003,6 +1056,7 @@ export class Markup {
       this.updateChip();
       this.changed();
     } else if (g.type === "erase") {
+      this.viewer.setLive(g.key, "");
       if (g.erased) this.changed();
     } else if (g.type === "blur") {
       const [x0, y0] = g.b0, [x1, y1] = g.b1 || g.b0;
@@ -1046,7 +1100,7 @@ export class Markup {
     return {
       kind: "ink", pen: this.pen.type,
       color: this.pen.type === "highlighter" ? this.pen.hcolor : this.pen.color,
-      w: THICKNESS[this.pen.thick] * unit * k.mult, pts
+      w: thickFactor(this.pen.thick) * unit * k.mult, pts
     };
   }
 
@@ -1070,7 +1124,7 @@ export class Markup {
   snapItem(r, unit) {
     if (this.pen.type === "highlighter") return this.inkItem([r.x1, r.y1, r.x2, r.y2], unit);
     const k = PEN_KIND[this.pen.type] || PEN_KIND.pen;
-    const it = { kind: "shape", shape: r.shape, color: this.pen.color, w: THICKNESS[this.pen.thick] * unit * k.mult, fill: false, text: "" };
+    const it = { kind: "shape", shape: r.shape, color: this.pen.color, w: thickFactor(this.pen.thick) * unit * k.mult, fill: false, text: "" };
     if (r.pts) {
       const b = bbox(r.pts);
       Object.assign(it, { pts: r.pts.slice(), x1: b.x0, y1: b.y0, x2: b.x1, y2: b.y1 });
@@ -1080,22 +1134,56 @@ export class Markup {
 
   shapeItem(b0, b1, unit) {
     const st = this.shape;
-    const it = { kind: "shape", shape: st.shape, color: st.color, w: THICKNESS[st.thick] * unit, fill: !!st.fill, x1: b0[0], y1: b0[1], x2: b1[0], y2: b1[1], text: "" };
+    const it = { kind: "shape", shape: st.shape, color: st.color, w: thickFactor(st.thick) * unit, fill: !!st.fill, x1: b0[0], y1: b0[1], x2: b1[0], y2: b1[1], text: "" };
     if (st.shape === "polygon") it.sides = st.sides || 6;
     if (st.shape === "section") it.text = "A";
     if (st.shape === "level") it.text = "+0.00";
     return it;
   }
 
+  showEraser(g, bx, by) {
+    const bpp = this.viewer.basePerPx(g.vit);
+    const r = (this.eraser.size / 2) * bpp;
+    this.viewer.setLive(g.key, `<circle cx="${bx}" cy="${by}" r="${r}" fill="rgba(31,78,121,0.08)" stroke="#1F4E79" stroke-width="${1.5 * bpp}"/>`);
+  }
+
+  // Erases what the eraser circle touches: whole marks, or in "part of a line" mode, just the
+  // piece of a pen stroke under it (shapes and blocks still go whole).
   eraseAt(vit, bx, by) {
-    const hit = this.hitItem(vit, bx, by, { includeComments: false });
-    if (!hit) return;
+    const doc = this.doc;
     const g = this.g;
-    if (g && !g.erased) this.doc.commit();
+    const r = (this.eraser.size / 2) * this.viewer.basePerPx(vit);
+    const unit = this.viewer.geom(vit).unit;
+    const vis = new Map(doc.layers.map((l) => [l.id, l.visible]));
+    const part = this.eraser.mode === "part";
+    const out = [];
+    let changed = false;
+    for (const it of vit.p.items) {
+      if (it.kind === "comment" || ((it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) === false)) { out.push(it); continue; }
+      let hit = false;
+      if (it.kind === "ink") hit = distToPolyline(bx, by, it.pts) <= r + it.w / 2;
+      else if (it.kind === "shape" && (it.shape === "arrow" || it.shape === "curved" || it.shape === "line")) hit = distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= r + it.w;
+      else if (isBlock(it)) {
+        const [lx, ly] = apply(inv(blockMatrix(it)), bx, by);
+        const t = r / it.k;
+        hit = lx >= -t && lx <= it.bw + t && ly >= -t && ly <= it.bd + t;
+      } else {
+        const b = itemBounds(it, unit);
+        hit = bx >= b.x0 - r && bx <= b.x1 + r && by >= b.y0 - r && by <= b.y1 + r;
+      }
+      if (!hit) { out.push(it); continue; }
+      if (!changed && g && !g.erased) doc.commit();
+      changed = true;
+      if (part && it.kind === "ink") {
+        for (const run of cutStroke(it.pts, bx, by, r + it.w / 2)) out.push({ ...it, id: newId(), pts: run });
+      }
+    }
+    if (!changed) return;
     if (g) g.erased++;
-    vit.p.items = vit.p.items.filter((x) => x !== hit);
+    vit.p.items = out;
     this.viewer.marksChanged();
   }
+
 
   applyEdit(g, bx, by) {
     const item = this.selectedItem();
@@ -1119,7 +1207,8 @@ export class Markup {
       const sgn = g.mode === "br" || g.mode === "bb" ? 1 : -1;
       const along = horiz ? dx * ux + dy * uy : dx * vx + dy * vy;
       const old = horiz ? o.bw : o.bd;
-      const nv = Math.max(100, Math.round((old + (sgn * along) / o.k) / 10) * 10);
+      const step = getUnits() === "ftin" ? INCH : 10;
+      const nv = Math.max(step * 4, Math.round((old + (sgn * along) / o.k) / step) * step);
       const shift = (sgn * (nv - old) / 2) * o.k;
       const f = familyOf(o.family);
       let cx = o.x1 + (horiz ? ux : vx) * shift, cy = o.y1 + (horiz ? uy : vy) * shift;
@@ -1255,4 +1344,25 @@ export function sizeLeader(item) {
   const w = Math.max(...lines.map((l) => mctx.measureText(l).width), item.fs * 2);
   item.tw = w + item.fs * 0.9;
   item.th = item.fs * (0.7 + lines.length * 1.2);
+}
+
+// Removes the part of a stroke inside a circle; returns the pieces that are left.
+function cutStroke(pts, cx, cy, R) {
+  const step = Math.max(R / 3, 1e-6);
+  const dense = [pts[0], pts[1]];
+  for (let i = 2; i < pts.length; i += 2) {
+    const ax = pts[i - 2], ay = pts[i - 1], bx = pts[i], by = pts[i + 1];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+    for (let k = 1; k <= n; k++) dense.push(ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n);
+  }
+  const runs = [];
+  let cur = [];
+  for (let i = 0; i < dense.length; i += 2) {
+    if (Math.hypot(dense[i] - cx, dense[i + 1] - cy) <= R) {
+      if (cur.length >= 4) runs.push(cur);
+      cur = [];
+    } else cur.push(dense[i], dense[i + 1]);
+  }
+  if (cur.length >= 4) runs.push(cur);
+  return runs.map((r) => thinPoints(r, step * 0.9));
 }

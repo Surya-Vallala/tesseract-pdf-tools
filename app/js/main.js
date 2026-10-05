@@ -12,7 +12,7 @@ import { engine } from "./engine.js";
 import { pickFiles, onIncomingFiles } from "./platform.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
 
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");

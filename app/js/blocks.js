@@ -456,32 +456,32 @@ export const BLOCK_CATEGORIES = [
 
 export const BLOCK_FAMILIES = [
   { id: "door", cat: "doors", draw: (w) => singleDoor(w), box: (w) => [w, w], sizes: [
-    { name: "Single door", label: "900", w: 900, d: 900, tile: true }, { label: "750", w: 750, d: 750 }, { label: "1000", w: 1000, d: 1000 }, { label: "1050", w: 1050, d: 1050 }, { label: "1200", w: 1200, d: 1200 }] },
+    { name: "Single door", label: "900", w: 900, d: 900, tile: true , in: [36] }, { label: "750", w: 750, d: 750 , in: [30] }, { label: "1000", w: 1000, d: 1000 , in: [39] }, { label: "1050", w: 1050, d: 1050 , in: [42] }, { label: "1200", w: 1200, d: 1200 , in: [48] }] },
   { id: "door2", cat: "doors", draw: (w) => doubleDoor(w), box: (w) => [w, w / 2], sizes: [
-    { name: "Double door", label: "1200", w: 1200, d: 600, tile: true }, { label: "1500", w: 1500, d: 750 }, { label: "1800", w: 1800, d: 900 }] },
+    { name: "Double door", label: "1200", w: 1200, d: 600, tile: true , in: [48] }, { label: "1500", w: 1500, d: 750 , in: [60] }, { label: "1800", w: 1800, d: 900 , in: [72] }] },
   { id: "sliding-door", cat: "doors", draw: slidingDoor, sizes: [
-    { name: "Sliding door", label: "1800", w: 1800, d: 230, tile: true }, { label: "1500", w: 1500, d: 230 }, { label: "2400", w: 2400, d: 230 }] },
+    { name: "Sliding door", label: "1800", w: 1800, d: 230, tile: true , in: [72, 9] }, { label: "1500", w: 1500, d: 230 , in: [60, 9] }, { label: "2400", w: 2400, d: 230 , in: [96, 9] }] },
   { id: "window", cat: "doors", draw: windowBlock, sizes: [
-    { name: "Window", label: "1500", w: 1500, d: 230, tile: true }, { label: "900", w: 900, d: 230 }, { label: "1200", w: 1200, d: 230 }, { label: "1800", w: 1800, d: 230 }, { label: "2100", w: 2100, d: 230 }] },
+    { name: "Window", label: "1500", w: 1500, d: 230, tile: true , in: [60, 9] }, { label: "900", w: 900, d: 230 , in: [36, 9] }, { label: "1200", w: 1200, d: 230 , in: [48, 9] }, { label: "1800", w: 1800, d: 230 , in: [72, 9] }, { label: "2100", w: 2100, d: 230 , in: [84, 9] }] },
   { id: "sliding-window", cat: "doors", draw: slidingWindow, sizes: [
-    { name: "Sliding window", label: "1500", w: 1500, d: 230, tile: true }, { label: "1200", w: 1200, d: 230 }, { label: "1800", w: 1800, d: 230 }] },
+    { name: "Sliding window", label: "1500", w: 1500, d: 230, tile: true , in: [60, 9] }, { label: "1200", w: 1200, d: 230 , in: [48, 9] }, { label: "1800", w: 1800, d: 230 , in: [72, 9] }] },
   { id: "ventilator", cat: "doors", draw: ventilator, sizes: [
-    { name: "Ventilator", label: "600", w: 600, d: 230, tile: true }, { label: "450", w: 450, d: 230 }, { label: "900", w: 900, d: 230 }] },
+    { name: "Ventilator", label: "600", w: 600, d: 230, tile: true , in: [24, 9] }, { label: "450", w: 450, d: 230 , in: [18, 9] }, { label: "900", w: 900, d: 230 , in: [36, 9] }] },
 
   { id: "bed", cat: "bedroom", draw: bed, sizes: [
-    { name: "Single bed", w: 900, d: 1950, tile: true }, { name: "Double bed", w: 1350, d: 1950, tile: true },
-    { name: "Queen bed", w: 1500, d: 2000, tile: true }, { name: "King bed", w: 1800, d: 2000, tile: true }] },
-  { id: "bedside", cat: "bedroom", draw: bedsideTable, sizes: [{ name: "Bedside table", w: 450, d: 450, tile: true }, { label: "500", w: 500, d: 450 }] },
+    { name: "Single bed", w: 900, d: 1950, tile: true , in: [36, 75] }, { name: "Double bed", w: 1350, d: 1950, tile: true , in: [54, 75] },
+    { name: "Queen bed", w: 1500, d: 2000, tile: true , in: [60, 78] }, { name: "King bed", w: 1800, d: 2000, tile: true , in: [72, 78] }] },
+  { id: "bedside", cat: "bedroom", draw: bedsideTable, sizes: [{ name: "Bedside table", w: 450, d: 450, tile: true , in: [18, 18] }, { label: "500", w: 500, d: 450 , in: [20, 18] }] },
   { id: "study", cat: "bedroom", draw: studyTable, sizes: [{ name: "Study table", w: 1200, d: 950, tile: true }, { label: "1000", w: 1000, d: 950 }, { label: "1500", w: 1500, d: 950 }] },
   { id: "dresser", cat: "bedroom", draw: dressingTable, sizes: [{ name: "Dressing table", w: 900, d: 900, tile: true }, { label: "1200", w: 1200, d: 900 }] },
 
   { id: "sofa", cat: "living", draw: sofa, sizes: [
-    { name: "1-seater sofa", w: 900, d: 850, p: { seats: 1 }, tile: true }, { name: "2-seater sofa", w: 1500, d: 850, p: { seats: 2 }, tile: true },
-    { name: "3-seater sofa", w: 2100, d: 850, p: { seats: 3 }, tile: true }] },
-  { id: "lsofa", cat: "living", draw: lSofa, sizes: [{ name: "L-shaped sofa", w: 2700, d: 1800, tile: true }, { label: "2400 × 1600", w: 2400, d: 1600 }, { label: "3000 × 2100", w: 3000, d: 2100 }] },
-  { id: "coffee", cat: "living", draw: coffeeTable, sizes: [{ name: "Coffee table", w: 1200, d: 600, tile: true }, { label: "900 × 600", w: 900, d: 600 }, { label: "1400 × 700", w: 1400, d: 700 }] },
-  { id: "sidetable", cat: "living", draw: sideTable, sizes: [{ name: "Side table", w: 450, d: 450, tile: true }, { label: "600", w: 600, d: 600 }] },
-  { id: "tv", cat: "living", draw: tvUnit, sizes: [{ name: "TV unit", w: 1800, d: 450, tile: true }, { label: "1500", w: 1500, d: 450 }, { label: "2400", w: 2400, d: 450 }] },
+    { name: "1-seater sofa", w: 900, d: 850, p: { seats: 1 }, tile: true, in: [36, 33] }, { name: "2-seater sofa", w: 1500, d: 850, p: { seats: 2 }, tile: true, in: [60, 33] },
+    { name: "3-seater sofa", w: 2100, d: 850, p: { seats: 3 }, tile: true, in: [84, 33] }] },
+  { id: "lsofa", cat: "living", draw: lSofa, sizes: [{ name: "L-shaped sofa", w: 2700, d: 1800, tile: true , in: [108, 72] }, { label: "2400 × 1600", w: 2400, d: 1600 , in: [96, 63] }, { label: "3000 × 2100", w: 3000, d: 2100 , in: [120, 84] }] },
+  { id: "coffee", cat: "living", draw: coffeeTable, sizes: [{ name: "Coffee table", w: 1200, d: 600, tile: true , in: [48, 24] }, { label: "900 × 600", w: 900, d: 600 , in: [36, 24] }, { label: "1400 × 700", w: 1400, d: 700 , in: [54, 27] }] },
+  { id: "sidetable", cat: "living", draw: sideTable, sizes: [{ name: "Side table", w: 450, d: 450, tile: true , in: [18, 18] }, { label: "600", w: 600, d: 600 , in: [24, 24] }] },
+  { id: "tv", cat: "living", draw: tvUnit, sizes: [{ name: "TV unit", w: 1800, d: 450, tile: true , in: [72, 18] }, { label: "1500", w: 1500, d: 450 , in: [60, 18] }, { label: "2400", w: 2400, d: 450 , in: [96, 18] }] },
 
   { id: "dining", cat: "dining", draw: dining, sizes: [
     { name: "4-seater dining", w: 1200, d: 1500, p: { side: 2 }, tile: true },
@@ -514,12 +514,12 @@ export const BLOCK_FAMILIES = [
   { id: "bathtub", cat: "bath", draw: bathtub, sizes: [{ name: "Bathtub", w: 1700, d: 750, tile: true }, { label: "1500 × 700", w: 1500, d: 700 }] },
 
   { id: "wardrobe", cat: "storage", draw: wardrobe, sizes: [
-    { name: "Wardrobe, 2 door", w: 1200, d: 600, tile: true }, { name: "Wardrobe, 3 door", w: 1800, d: 600, tile: true },
-    { name: "Wardrobe, 4 door", w: 2400, d: 600, tile: true }] },
-  { id: "loft", cat: "storage", draw: loft, sizes: [{ name: "Loft (above)", w: 1800, d: 600, tile: true }] },
-  { id: "shoerack", cat: "storage", draw: shoeRack, sizes: [{ name: "Shoe rack", w: 900, d: 350, tile: true }, { label: "1200", w: 1200, d: 350 }] },
-  { id: "bookshelf", cat: "storage", draw: bookshelf, sizes: [{ name: "Bookshelf", w: 900, d: 350, tile: true }, { label: "1200", w: 1200, d: 350 }, { label: "1800", w: 1800, d: 350 }] },
-  { id: "pooja", cat: "storage", draw: poojaUnit, sizes: [{ name: "Pooja unit", w: 900, d: 600, tile: true }, { label: "1200", w: 1200, d: 600 }] },
+    { name: "Wardrobe, 2 door", w: 1200, d: 600, tile: true , in: [48, 24] }, { name: "Wardrobe, 3 door", w: 1800, d: 600, tile: true , in: [72, 24] },
+    { name: "Wardrobe, 4 door", w: 2400, d: 600, tile: true , in: [96, 24] }] },
+  { id: "loft", cat: "storage", draw: loft, sizes: [{ name: "Loft (above)", w: 1800, d: 600, tile: true , in: [72, 24] }] },
+  { id: "shoerack", cat: "storage", draw: shoeRack, sizes: [{ name: "Shoe rack", w: 900, d: 350, tile: true , in: [36, 14] }, { label: "1200", w: 1200, d: 350 , in: [48, 14] }] },
+  { id: "bookshelf", cat: "storage", draw: bookshelf, sizes: [{ name: "Bookshelf", w: 900, d: 350, tile: true , in: [36, 14] }, { label: "1200", w: 1200, d: 350 , in: [48, 14] }, { label: "1800", w: 1800, d: 350 , in: [72, 14] }] },
+  { id: "pooja", cat: "storage", draw: poojaUnit, sizes: [{ name: "Pooja unit", w: 900, d: 600, tile: true , in: [36, 24] }, { label: "1200", w: 1200, d: 600 , in: [48, 24] }] },
 
   { id: "stair", cat: "stairs", draw: straightStair, sizes: [{ name: "Straight stair", w: 1000, d: 3500, tile: true }, { label: "1200 wide", w: 1200, d: 3500 }] },
   { id: "dogleg", cat: "stairs", draw: dogLegStair, sizes: [{ name: "Dog-legged stair", w: 2100, d: 3500, tile: true }, { label: "2500 wide", w: 2500, d: 3750 }] },
@@ -536,15 +536,75 @@ export function blockParts(familyId, w, d, p) {
   return f ? f.draw(w, d, p || {}) : [];
 }
 
+export const INCH = 25.4;
+
+/**
+ * A standard size in mm for the chosen units. In feet and inches the sizes are round
+ * imperial ones (Queen 5'0" x 6'6"): from the size's own `in` list, or the mm size
+ * rounded to whole inches.
+ */
+export function sizeIn(f, s, units) {
+  if (units !== "ftin") return [s.w, s.d];
+  let w, d;
+  if (s.in) { w = s.in[0] * INCH; d = s.in.length > 1 ? s.in[1] * INCH : s.d; }
+  else { w = Math.round(s.w / INCH) * INCH; d = Math.round(s.d / INCH) * INCH; }
+  if (f.box) d = f.box(w)[1];
+  else if (!s.in || s.in.length < 2) d = Math.round(d / INCH) * INCH;
+  return [w, d];
+}
+
 /** Library tiles: one per named size marked as a tile. */
-export function blockTiles() {
+export function blockTiles(units = "mm") {
   const out = [];
   for (const f of BLOCK_FAMILIES) {
-    for (const s of f.sizes) if (s.tile) out.push({ family: f.id, cat: f.cat, name: s.name, w: s.w, d: s.d, p: s.p || null });
+    for (const s of f.sizes) {
+      if (!s.tile) continue;
+      const [w, d] = sizeIn(f, s, units);
+      out.push({ family: f.id, cat: f.cat, name: s.name, w, d, p: s.p || null });
+    }
   }
   return out;
 }
 
-export function sizeText(w, d) {
-  return `${Math.round(w)} × ${Math.round(d)}`;
+/** A length for display: "1500" in mm, or 4'11½" in feet and inches (nearest half inch). */
+export function fmtLen(mm, units = "mm") {
+  if (units !== "ftin") return String(Math.round(mm));
+  const inch = Math.round((mm / INCH) * 2) / 2;
+  const ft = Math.floor(inch / 12);
+  const rest = inch - ft * 12;
+  return `${ft}'${Math.floor(rest)}${rest % 1 ? "½" : ""}"`;
+}
+
+export function sizeText(w, d, units = "mm") {
+  return `${fmtLen(w, units)} × ${fmtLen(d, units)}`;
+}
+
+/**
+ * Reads a length typed by the user and returns mm, or null.
+ * Accepts 1500, 1500mm, 1.5m, 5'6", 5'6, 5', 5'-6½", 66", 5ft 6in. A plain number is mm,
+ * or inches when the units are feet and inches.
+ */
+export function parseLen(text, units = "mm") {
+  let t = String(text || "").trim().toLowerCase()
+    .replace(/[’′‘`]/g, "'").replace(/[”″“]/g, '"').replace(/''/g, '"')
+    .replace(/½/g, ".5").replace(/¼/g, ".25").replace(/¾/g, ".75")
+    .replace(/\s*(feet|foot|ft)\b\.?/g, "'").replace(/\s*(inches|inch|in)\b\.?/g, '"');
+  if (!t) return null;
+  let m;
+  const num = "(\\d+(?:\\.\\d+)?)";
+  if ((m = new RegExp(`^${num}\\s*mm$`).exec(t))) return +m[1];
+  if ((m = new RegExp(`^${num}\\s*cm$`).exec(t))) return +m[1] * 10;
+  if ((m = new RegExp(`^${num}\\s*m$`).exec(t))) return +m[1] * 1000;
+  if ((m = new RegExp(`^${num}\\s*'\\s*-?\\s*(?:${num}\\s*"?)?$`).exec(t))) return (+m[1] * 12 + (m[2] ? +m[2] : 0)) * INCH;
+  if ((m = new RegExp(`^${num}\\s*"$`).exec(t))) return +m[1] * INCH;
+  if ((m = new RegExp(`^${num}$`).exec(t))) return units === "ftin" ? +m[1] * INCH : +m[1];
+  return null;
+}
+
+/** "1500 x 2000", "5'0\" x 6'6\"", "60 by 78" -> { w, d } in mm, or null. */
+export function parseSizeText(text, units = "mm") {
+  const parts = String(text || "").split(/\s*(?:[x×*]|\bby\b)\s*/i).filter((x) => x.trim());
+  if (parts.length !== 2) return null;
+  const w = parseLen(parts[0], units), d = parseLen(parts[1], units);
+  return w > 0 && d > 0 ? { w, d } : null;
 }
