@@ -13,7 +13,7 @@ import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./
 import { pickFiles, onIncomingFiles } from "./platform.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
 
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.6";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -21,6 +21,8 @@ const docScreen = $("docScreen");
 
 hydrateIcons();
 initHistory();
+// Blocks drawn by AI were taken out in 1.6: forget any Claude API key an earlier version kept here.
+try { localStorage.removeItem("tpt-ai-key"); } catch (e) { /* private mode */ }
 $("appVersion").textContent = APP_VERSION;
 
 let cur = null; // { doc, tab, layer }

@@ -15,7 +15,7 @@ import { recognizeShape } from "./snap.js";
 import { sizeText, parseLen, INCH, compactParts } from "./blocks.js";
 import {
   blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSizeText, familyOf, ratioForK, getUnits, setUnits,
-  createWithAI, addMyBlock, myTile, openAiSetup
+  addMyBlock, myTile
 } from "./blockui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
@@ -402,12 +402,8 @@ export class Markup {
         scaleNote: note,
         onPick: (tile) => { sheet.close(); this.placeBlock(tile); },
         onChangeScale: () => { sheet.close(); if (vit) this.changeScale(vit); },
-        onAI: (desc) => { sheet.close(); createWithAI(desc, { onUse: (tile) => this.placeBlock(tile) }); },
         onFromDrawing: () => { sheet.close(); this.startPickArea(); }
       });
-      const ai = h(`<button type="button" class="link ai-settings">${icon("sparkle")}<span>AI settings</span></button>`);
-      ai.addEventListener("click", () => { sheet.close(); openAiSetup(); });
-      picker.el.appendChild(ai);
       pane.appendChild(picker.el);
       footBox.appendChild(picker.foot);
     };

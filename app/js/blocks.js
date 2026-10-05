@@ -537,7 +537,7 @@ export function blockParts(familyId, w, d, p) {
   return f ? f.draw(w, d, p || {}) : [];
 }
 
-/* ---------- custom blocks (My blocks: made with AI or from your own drawing) ---------- */
+/* ---------- custom blocks (My blocks: made from your own drawing) ---------- */
 // A custom block keeps its drawing in p: { w0, d0, parts } (mm, at its original size), so it
 // travels inside the PDF. Stretching it scales the drawing to the new size.
 
@@ -564,71 +564,6 @@ export function compactParts(parts) {
   return parts.map((pt) => pt.text != null
     ? { text: String(pt.text).slice(0, 12), x: r1(pt.x), y: r1(pt.y), size: r1(pt.size) }
     : { cmds: pt.cmds.map((c) => (c[0] === "Z" ? ["Z"] : [c[0], ...c.slice(1).map(r1)])), ...(pt.dash ? { dash: true } : {}), ...(pt.fill ? { fill: true } : {}) });
-}
-
-/**
- * Turns a block described as simple elements (from the AI) into parts.
- * spec: { name, width, depth, elements: [{ type: line|rect|circle|ellipse|arc|text, ... }] }
- * Throws when the description can't be used.
- */
-export function partsFromSpec(spec) {
-  const num = (v) => (typeof v === "number" && isFinite(v) ? v : NaN);
-  const w = num(spec && spec.width), d = num(spec && spec.depth);
-  if (!(w >= 50 && w <= 30000 && d >= 20 && d <= 30000)) throw new Error("size");
-  const els = Array.isArray(spec.elements) ? spec.elements.slice(0, 400) : [];
-  const cx = (v) => Math.max(-w * 0.15, Math.min(w * 1.15, v));
-  const cy = (v) => Math.max(-d * 0.15, Math.min(d * 1.15, v));
-  const parts = [];
-  for (const e of els) {
-    if (!e || typeof e !== "object") continue;
-    const dash = !!e.dashed, fill = !!e.fill;
-    const P = (cmds) => parts.push({ cmds, dash, fill });
-    try {
-      switch (e.type) {
-        case "line": {
-          const pts = (Array.isArray(e.points) ? e.points : []).filter((q) => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1]));
-          if (pts.length < 2) break;
-          P(poly(pts.flatMap((q) => [cx(+q[0]), cy(+q[1])]), !!e.closed));
-          break;
-        }
-        case "rect": {
-          const x = num(e.x), y = num(e.y), rw = num(e.w), rh = num(e.h);
-          if (![x, y, rw, rh].every(isFinite) || rw <= 0 || rh <= 0) break;
-          const r = isFinite(num(e.r)) ? Math.max(0, num(e.r)) : 0;
-          P(r ? rrect(cx(x), cy(y), rw, rh, r) : rect(cx(x), cy(y), rw, rh));
-          break;
-        }
-        case "circle": {
-          const x = num(e.cx), y = num(e.cy), r = num(e.r);
-          if (![x, y, r].every(isFinite) || r <= 0) break;
-          P(circle(cx(x), cy(y), r));
-          break;
-        }
-        case "ellipse": {
-          const x = num(e.cx), y = num(e.cy), rx = num(e.rx), ry = num(e.ry);
-          if (![x, y, rx, ry].every(isFinite) || rx <= 0 || ry <= 0) break;
-          P(ellipse(cx(x), cy(y), rx, ry));
-          break;
-        }
-        case "arc": {
-          const x = num(e.cx), y = num(e.cy), r = num(e.r), a0 = num(e.start), a1 = num(e.end);
-          if (![x, y, r, a0, a1].every(isFinite) || r <= 0 || a0 === a1) break;
-          P(arc(cx(x), cy(y), r, (a0 * Math.PI) / 180, (a1 * Math.PI) / 180));
-          break;
-        }
-        case "text": {
-          const x = num(e.x), y = num(e.y), sz = num(e.size);
-          const t = String(e.text || "").trim().slice(0, 12);
-          if (!t || ![x, y].every(isFinite)) break;
-          parts.push({ text: t, x: cx(x), y: cy(y), size: isFinite(sz) && sz > 0 ? Math.min(sz, Math.min(w, d)) : Math.min(w, d) * 0.15 });
-          break;
-        }
-      }
-    } catch (err) { /* skip a broken element */ }
-  }
-  if (parts.filter((p) => p.cmds).length < 1) throw new Error("empty");
-  const name = String((spec && spec.name) || "").trim().slice(0, 40);
-  return { name, w, d, parts: compactParts(parts) };
 }
 
 export const INCH = 25.4;
