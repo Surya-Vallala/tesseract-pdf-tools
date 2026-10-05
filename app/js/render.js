@@ -92,7 +92,10 @@ export async function drawPage(doc, p, scale, region, canvas, job, { contentOnly
       viewport: vp,
       transform: [1, 0, 0, 1, -(ox + region.x), -(oy + region.y)],
       optionalContentConfigPromise: s.oc ? Promise.resolve(s.oc) : null,
-      annotationMode: doc.commentsVisible ? pdfjsLib.AnnotationMode.ENABLE : pdfjsLib.AnnotationMode.DISABLE,
+      // drawings the phone draws itself are left out (see interop.js); so are comments, when off
+      annotationMode: (s.hiddenAnnots && s.hiddenAnnots.size) || (s.foreign && !doc.commentsVisible)
+        ? pdfjsLib.AnnotationMode.ENABLE_STORAGE
+        : doc.commentsVisible ? pdfjsLib.AnnotationMode.ENABLE : pdfjsLib.AnnotationMode.DISABLE,
       background: "#ffffff"
     });
     if (job) job.task = task;
@@ -130,6 +133,6 @@ export async function drawPage(doc, p, scale, region, canvas, job, { contentOnly
 export function renderKey(doc, p) {
   const s = doc.src(p);
   const c = p.crop ? `${p.crop.x0.toFixed(4)},${p.crop.y0.toFixed(4)},${p.crop.x1.toFixed(4)},${p.crop.y1.toFixed(4)}` : "-";
-  const extra = s.kind === "image" ? doc.imageFit : s.kind === "pdf" ? (s.oc ? s.oc.getHash() : "") + (doc.commentsVisible ? "c" : "n") : "";
+  const extra = s.kind === "image" ? doc.imageFit : s.kind === "pdf" ? (s.oc ? s.oc.getHash() : "") + (doc.commentsVisible ? "c" : "n") + (s.annVer || 0) : "";
   return `${p.src}:${p.index}:${p.rot}:${c}:${extra}`;
 }

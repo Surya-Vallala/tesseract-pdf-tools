@@ -2,6 +2,27 @@
 import { schedule, drawPage, renderKey } from "./render.js";
 import { icon, esc, h } from "./ui.js";
 import { baseName } from "./doc.js";
+import { pageGeom } from "./geom.js";
+import { drawableFor, drawableToSVG } from "./shapes.js";
+
+// Thumbnails show your drawings too (they are drawn over the page picture).
+function thumbKey(doc, p) {
+  return renderKey(doc, p) + "|" + (p.items.some((it) => it.kind === "ink" || it.kind === "shape") ? doc.ovVersion || 0 : 0);
+}
+
+async function paintMarks(doc, p, canvas) {
+  const vis = new Map(doc.layers.map((l) => [l.id, l.visible]));
+  const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) !== false);
+  if (!marks.length) return;
+  const g = pageGeom(doc, p);
+  const body = marks.map((it) => drawableToSVG(drawableFor(it, g.unit, g.pt))).join("");
+  const m = g.b2d.map((v) => +v.toFixed(5)).join(" ");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${g.dw} ${g.dh}" preserveAspectRatio="none"><g transform="matrix(${m})">${body}</g></svg>`;
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  try { await img.decode(); } catch (e) { return; }
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+}
 
 const LONG_PRESS_MS = 380;
 
@@ -79,7 +100,7 @@ export class PageGrid {
         ? `<i style="background:${s.color}"></i><span>${i + 1} · ${esc(baseName(s.name))}</span>`
         : `<span>${i + 1}</span>`;
       t.el.classList.toggle("sel", this.selection.has(p.key));
-      const want = renderKey(doc, p);
+      const want = thumbKey(doc, p);
       if (t.key !== want) this.placeThumb(t, want);
       frag.appendChild(t.el);
     });
@@ -135,15 +156,18 @@ export class PageGrid {
     const canvas = document.createElement("canvas");
     canvas.style.width = cssW + "px";
     canvas.style.height = cssH + "px";
-    const key = t.wantKey || renderKey(doc, t.p);
+    const key = t.wantKey || thumbKey(doc, t.p);
     const p = t.p;
-    const job = schedule(1, (j) => drawPage(doc, p, scale, { x: 0, y: 0, w: cssW * dpr, h: cssH * dpr }, canvas, j));
+    const job = schedule(1, async (j) => {
+      await drawPage(doc, p, scale, { x: 0, y: 0, w: cssW * dpr, h: cssH * dpr }, canvas, j);
+      await paintMarks(doc, p, canvas);
+    });
     t.job = job;
     job.promise.then(() => {
       if (t.job !== job || this.doc !== doc) return;
       t.job = null;
       this.thumbs.set(key, canvas);
-      if (renderKey(doc, t.p) !== key) return;
+      if (thumbKey(doc, t.p) !== key) return;
       const old = box.querySelector("canvas, .ph");
       if (old) { if (old !== canvas) old.replaceWith(canvas); } else box.prepend(canvas);
       t.key = key;
@@ -156,7 +180,7 @@ export class PageGrid {
   layersChanged() {
     if (!this.doc) return;
     for (const t of this.tiles.values()) {
-      const want = renderKey(this.doc, t.p);
+      const want = thumbKey(this.doc, t.p);
       if (t.key !== want) this.placeThumb(t, want);
     }
     // Re-trigger drawing for tiles on screen.

@@ -69,7 +69,7 @@ function treeFromPdfjs(order, groups) {
 
 export async function layerTree(src) {
   if (src.layerTree) return src.layerTree;
-  const groups = new Map([...src.oc]);
+  const groups = new Map([...src.oc].filter(([id]) => !(src.sketch && src.sketch.has(id))));
   let tree = null;
   try { tree = await treeFromFile(src, groups); } catch (e) { /* protected or unusual file: use pdf.js order */ }
   if (!tree || !tree.length) tree = treeFromPdfjs(src.oc.getOrder(), groups);

@@ -23,7 +23,7 @@ export function ensureOverlay(it) {
   const notes = svgEl("ov ov-notes");
   const pins = document.createElement("div");
   pins.className = "ov ov-pins";
-  it.el.append(marks, blurs, notes, pins);
+  it.el.append(blurs, marks, notes, pins);
   it.ov = { marks, blurs, notes, pins, live: "" };
   return it.ov;
 }
@@ -47,7 +47,7 @@ export function renderOverlay(doc, it, { selectedId = null } = {}) {
   for (const item of p.items) {
     if (item.kind === "ink" || item.kind === "shape") {
       if (layerVisible.get(item.layer) === false) continue;
-      marks += `<g data-id="${item.id}">${drawableToSVG(drawableFor(item, g.unit))}</g>`;
+      marks += `<g data-id="${item.id}">${drawableToSVG(drawableFor(item, g.unit, g.pt))}</g>`;
     } else if (item.kind === "blur") {
       const a = apply(g.b2d, item.x0, item.y0), b = apply(g.b2d, item.x1, item.y1);
       const x0 = Math.min(a[0], b[0]) / g.dw * 100, y0 = Math.min(a[1], b[1]) / g.dh * 100;

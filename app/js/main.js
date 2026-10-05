@@ -9,10 +9,11 @@ import { Markup } from "./markup.js";
 import { askAuthor, openBubble, openCommentsList, editComment } from "./comments.js";
 import { openTools } from "./tools.js";
 import { engine } from "./engine.js";
+import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
 import { pickFiles, onIncomingFiles } from "./platform.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
 
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -123,7 +124,10 @@ async function openFiles(files, { combine }) {
     return;
   }
   const doc = new Doc();
-  loaded.forEach((s) => doc.addSource(s));
+  const added = loaded.map((s) => [s, doc.addSource(s)]);
+  await bringDrawings(doc, added);
+  doc.history = [];
+  doc.dirty = false;
   doc.name = loaded.length === 1 ? baseName(loaded[0].name) : "Combined";
   if (loaded.length === 1 && loaded[0].kind === "pdf" && loaded[0].password) doc.password = loaded[0].password;
   showDoc(doc, combine || loaded.length > 1 ? "pages" : "view");
@@ -141,16 +145,31 @@ async function addFiles(files) {
     let at = sel.length ? doc.pages.indexOf(sel[sel.length - 1]) + 1 : doc.pages.length;
     doc.commit();
     let count = 0;
+    const brought = [];
     for (const s of loaded) {
       const added = doc.addSource(s, at);
+      brought.push([s, added]);
       at += added.length;
       count += added.length;
     }
+    await bringDrawings(doc, brought);
     if (doc.sources.size > 1 && doc.name !== "Combined") doc.name = "Combined";
     doc.changed({ added: true });
     toast(`Added ${count} page${count === 1 ? "" : "s"}`);
   }
   if (problems.length) toast(problems.join(" "), { ms: 6000 });
+}
+
+// Drawings made in the Windows app (or saved here before) become marks you can edit.
+async function bringDrawings(doc, pairs) {
+  const b = pairs.some(([s]) => s.kind === "pdf" && !s.locked) ? busy("Reading drawings…") : null;
+  try {
+    for (const [s, pages] of pairs) {
+      try { await importDrawings(doc, s, pages); } catch (e) { console.warn("Drawings could not be read", e); }
+    }
+  } finally {
+    if (b) b.close();
+  }
 }
 
 /* ---------- document screen ---------- */
@@ -247,6 +266,7 @@ function setTab(tab) {
     if (tab === "markup") markup.enter();
   } else {
     viewer.hide();
+    grid.layersChanged(); // drawings may have changed: thumbnails show them
   }
   updateDocUi();
 }
@@ -291,8 +311,8 @@ $("tabbar").addEventListener("click", (e) => {
     if (cur.tab === "pages") setTab("view");
     openLayers(cur.doc, {
       pdf: () => { viewer.layersChanged(); grid.layersChanged(); },
-      marks: () => { marksChanged(); markup.updateChip(); },
-      comments: () => { viewer.layersChanged(); grid.layersChanged(); marksChanged(); }
+      marks: () => { syncSketchVisibility(cur.doc); viewer.layersChanged(); grid.layersChanged(); marksChanged(); markup.updateChip(); },
+      comments: () => commentsToggled()
     });
     return;
   }
@@ -318,16 +338,25 @@ const toolsCtx = {
 $("btnDone").addEventListener("click", () => setTab("view"));
 $("layerChip").addEventListener("click", async (e) => {
   if (!cur || e.currentTarget.disabled) return;
-  if (await pickDrawingLayer(cur.doc, e.currentTarget)) { markup.updateChip(); marksChanged(); }
+  if (await pickDrawingLayer(cur.doc, e.currentTarget)) { syncSketchVisibility(cur.doc); viewer.layersChanged(); markup.updateChip(); marksChanged(); }
 });
 $("commentsChip").addEventListener("click", () => {
   if (!cur) return;
   openCommentsList(cur.doc, {
     onGo: (page) => { setTab("view"); viewer.scrollToPage(cur.doc.pages.indexOf(page)); },
     onChange: marksChanged,
-    onToggle: () => { viewer.layersChanged(); grid.layersChanged(); marksChanged(); }
+    onToggle: () => commentsToggled()
   });
 });
+
+function commentsToggled() {
+  if (!cur) return;
+  const doc = cur.doc;
+  viewer.layersChanged(); grid.layersChanged(); marksChanged();
+  applyCommentVisibility(doc).then((changed) => {
+    if (changed && cur && cur.doc === doc) { viewer.layersChanged(); grid.layersChanged(); }
+  });
+}
 
 $("btnSelAll").addEventListener("click", () => grid.setAll(grid.selection.size === 0));
 $("btnAddFiles").addEventListener("click", async () => {

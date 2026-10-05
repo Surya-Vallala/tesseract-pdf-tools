@@ -3,13 +3,14 @@
 import { libDoc, baseName, FULL, imagePageSize } from "./doc.js";
 import { cropUserRect } from "./render.js";
 import { pageGeom, mul, inv, apply, rot } from "./geom.js";
-import { drawableFor, hexToRgb } from "./shapes.js";
+import { drawableFor, hexToRgb, PEN_KIND, SHAPE_NAMES } from "./shapes.js";
+import { toDesk, asciiJSON, DRAW_KEY, SKETCH_KEY, SCALE_KEY, FILE_KEY, GROUP_LABEL } from "./interop.js";
 import { wmAppliesTo, wmLayout } from "./watermark.js";
 import { filterContent } from "./contentfilter.js";
 import { engine } from "./engine.js";
 import { layersEdited } from "./layers.js";
 import { openSheet, h, esc, icon, busy, toast, segmented } from "./ui.js";
-import { canShareFiles, shareFiles, downloadFile, downloadFiles } from "./platform.js";
+import { canShareFiles, shareFiles, downloadFile, downloadFiles, settings } from "./platform.js";
 
 const IMAGE_MAX = 4096;
 const GLYPHLESS_B64 = "AAEAAAAKAIAAAwAgT1MvMkT/RUAAAAEoAAAAYGNtYXAADABzAAABkAAAADRnbHlmAAAAAAAAAcwAAAABaGVhZCzoGYwAAACsAAAANmhoZWED6QH2AAAA5AAAACRobXR4AfQAAAAAAYgAAAAGbG9jYQAAAAAAAAHEAAAABm1heHAAAwACAAABCAAAACBuYW1lGZ8ZNAAAAdAAAABycG9zdJ5/ds8AAAJEAAAALQABAAAAAQAARbS6gV8PPPUAAwPoAAAAAObo7FYAAAAA5ujsVgAAAAAAAAAAAAAAAwACAAAAAAAAAAEAAAPoAAAAAAH0AAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAEAAAACAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAwH0AZAABQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAPz8/PwAAACAAIAPoAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAAgAAAB9AAAAAAAAAAAAAIAAAADAAAAFAADAAEAAAAUAAQAIAAAAAQABAABAAAAIP//AAAAIP///+EAAQAAAAAAAAAAAAAAAAAAAAAAAAAEADYAAQAAAAAAAQANAAAAAQAAAAAAAgAHAA0AAwABBAkAAQAaABQAAwABBAkAAgAOAC5HbHlwaExlc3NGb250UmVndWxhcgBHAGwAeQBwAGgATABlAHMAcwBGAG8AbgB0AFIAZQBnAHUAbABhAHIAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAECBmdseXBoMQAAAA==";
@@ -145,13 +146,14 @@ async function drawableOps(B, R, d, m) {
   };
   for (const p of d.paths) {
     if (p.fill) {
-      const a = p.fillOpacity ?? 1;
-      s += "q\n" + (a < 1 ? `${R.gs(null, a, false)} gs\n` : "") + `${rgbStr(p.fill)} rg\n` + path(p.cmds) + "f\nQ\n";
+      const a = (p.fillOpacity ?? 1) * (p.opacity ?? 1);
+      s += "q\n" + (a < 0.999 ? `${R.gs(null, +a.toFixed(3), false)} gs\n` : "") + `${rgbStr(p.fill)} rg\n` + path(p.cmds) + "f\nQ\n";
     }
     if (p.stroke) {
       const a = p.opacity ?? 1;
-      s += "q\n" + (a < 1 || p.multiply ? `${R.gs(a, null, !!p.multiply)} gs\n` : "") +
-        `${rgbStr(p.stroke)} RG ${fmt(p.w * scale)} w ${p.cap === "butt" ? 0 : 1} J 1 j\n` +
+      const cap = p.cap === "butt" ? 0 : p.cap === "square" ? 2 : 1;
+      s += "q\n" + (a < 0.999 || p.multiply ? `${R.gs(a, null, !!p.multiply)} gs\n` : "") +
+        `${rgbStr(p.stroke)} RG ${fmt(p.w * scale)} w ${cap} J ${p.join === "miter" ? 0 : 1} j\n` +
         (p.dash ? `[${fmt(p.dash[0] * scale)} ${fmt(p.dash[1] * scale)}] 0 d\n` : "") + path(p.cmds) + "S\nQ\n";
     }
   }
@@ -162,21 +164,24 @@ async function drawableOps(B, R, d, m) {
 async function textOps(B, R, t, m) {
   if (!t.text) return "";
   const font = t.bold ? B.helvB : B.helv;
+  const a = ((t.rot || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+  const op = t.opacity != null && t.opacity < 0.999 ? `${R.gs(null, t.opacity, false)} gs ` : "";
   let hex = null;
   try { hex = font.encodeText(t.text).toString(); } catch (e) { hex = null; }
   if (hex) {
     const w = font.widthOfTextAtSize(t.text, t.size);
-    const x0 = t.anchor === "start" ? t.x : t.x - w / 2;
-    const yb = t.y + t.size * 0.35;
-    const tm = mul(m, [1, 0, 0, -1, x0, yb]);
-    return `BT ${R.font(font)} ${fmt(t.size)} Tf ${tm.map(fmt).join(" ")} Tm ${rgbStr(t.color)} rg ${hex} Tj ET\n`;
+    const shift = t.anchor === "start" ? 0 : t.anchor === "end" ? -w : -w / 2;
+    // the start of the baseline: along the line from the anchor, and a little below its middle
+    const bx = t.x + shift * c - t.size * 0.35 * sn, by = t.y + shift * sn + t.size * 0.35 * c;
+    const tm = mul(m, [c, sn, sn, -c, bx, by]);
+    return `q ${op}BT ${R.font(font)} ${fmt(t.size)} Tf ${tm.map(fmt).join(" ")} Tm ${rgbStr(t.color)} rg ${hex} Tj ET Q\n`;
   }
   const img = await textImage(t.text, t.color, t.bold);
   const ref = (await B.out.embedPng(img.bytes)).ref;
   const hgt = t.size * 1.3, w = hgt * img.aspect;
-  const x0 = t.anchor === "start" ? t.x : t.x - w / 2;
-  const cm = mul(m, [w, 0, 0, -hgt, x0, t.y + hgt / 2]);
-  return `q ${cm.map(fmt).join(" ")} cm ${R.xobj(ref)} Do Q\n`;
+  const shift = t.anchor === "start" ? 0 : t.anchor === "end" ? -w : -w / 2;
+  const cm = mul(m, mul([c, sn, -sn, c, t.x, t.y], [w, 0, 0, -hgt, shift, hgt / 2]));
+  return `q ${op}${cm.map(fmt).join(" ")} cm ${R.xobj(ref)} Do Q\n`;
 }
 
 function glyphlessFont(B) {
@@ -316,6 +321,111 @@ async function addComment(B, leaf, pageRef, item, unit, m) {
   leaf.addAnnot(ctx.register(ctx.obj(o)));
 }
 
+/* ---------- drawings as annotations (the Windows app's format) ---------- */
+
+function hexOfAscii(text) {
+  let out = "";
+  for (let i = 0; i < text.length; i++) out += text.charCodeAt(i).toString(16).padStart(2, "0");
+  return out;
+}
+
+const SUBJ = { pen: "Pen", marker: "Marker", highlighter: "Highlighter" };
+
+async function addDrawing(B, leaf, pageRef, item, g, m, ocRef, author) {
+  const { PDFHexString, PDFString } = window.PDFLib;
+  const { ctx } = B;
+  const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+  const d = drawableFor(item, g.unit, g.pt);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const grow = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const p of d.paths) for (const c of p.cmds) for (let i = 1; i < c.length; i += 2) { const q = apply(m, c[i], c[i + 1]); grow(q[0], q[1]); }
+  for (const t of d.texts) {
+    const r = t.size * (0.6 * t.text.length + 1);
+    for (const [dx, dy] of [[-r, -r], [r, r], [-r, r], [r, -r]]) { const q = apply(m, t.x + dx, t.y + dy); grow(q[0], q[1]); }
+  }
+  if (!isFinite(x0)) return;
+  const pad = (item.w || 1) * scale * 3 + 1;
+  const rect = [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+  const apRes = ctx.obj({});
+  const R = new Res(B, apRes);
+  const ops = await drawableOps(B, R, d, m);
+  const ap = ctx.register(ctx.flateStream(ops, { Type: "XObject", Subtype: "Form", BBox: rect, Resources: apRes }));
+  const now = pdfDate(Date.now());
+  const dj = toDesk(item, { b2p: m, pt: 1 / scale, author, now });
+  if (!dj) return;
+  const o = {
+    Type: "Annot", Rect: rect, F: 4, P: pageRef,
+    NM: PDFString.of("tpt-" + dj.id),
+    CreationDate: PDFString.of(dj.created || now),
+    M: PDFString.of(now),
+    T: PDFHexString.fromText(dj.author || ""),
+    Subj: PDFHexString.fromText(dj.kind === "ink" ? SUBJ[dj.tool] || "Pen" : dj.kind === "block" ? (dj.block && dj.block.name) || "Block" : SHAPE_NAMES[item.shape] || "Shape"),
+    Contents: PDFHexString.fromText(dj.label || ""),
+    C: hexToRgb(dj.color),
+    BS: { W: dj.width, S: dj.dashed ? "D" : "S" },
+    CA: dj.opacity,
+    AP: { N: ap }
+  };
+  if (dj.fill) o.IC = hexToRgb(dj.fill);
+  if (dj.kind === "ink" && dj.tool === "highlighter") o.BM = "Multiply";
+  if (ocRef) o.OC = ocRef;
+  if (dj.kind === "ink") {
+    o.Subtype = "Ink";
+    o.InkList = dj.paths.map((path) => path.flatMap((q) => q));
+  } else if (dj.kind === "shape" && dj.paths.length && Array.isArray(dj.paths[0]) && dj.tool !== "polygon") {
+    if (dj.tool === "curved_arrow") { o.Subtype = "PolyLine"; o.Vertices = dj.paths.flatMap((q) => q); }
+    else { o.Subtype = "Line"; o.L = [...dj.paths[0], ...dj.paths[dj.paths.length - 1]]; }
+  } else {
+    // shapes and blocks: the box around them
+    o.Subtype = "Polygon";
+    const v = [];
+    for (const [u, w] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) { const q = apply(dj.m, u * dj.w, w * dj.h); v.push(q[0], q[1]); }
+    o.Vertices = v;
+  }
+  const dict = ctx.obj(o);
+  dict.set(window.PDFLib.PDFName.of(DRAW_KEY), PDFHexString.of(hexOfAscii(asciiJSON(dj))));
+  leaf.addAnnot(ctx.register(dict));
+}
+
+/** Drawings the phone writes again (or whose layer was deleted here) leave the copied page. */
+function dropOldDrawings(ctx, leaf, imported, doc) {
+  const { PDFName, PDFArray, PDFDict } = window.PDFLib;
+  const annots = leaf.lookupMaybe(PDFName.of("Annots"), PDFArray);
+  if (!annots) return;
+  const keep = annots.asArray().filter((r) => {
+    const a = ctx.lookupMaybe(r, PDFDict);
+    if (!a || !a.get(PDFName.of(DRAW_KEY))) return true;
+    let nm = "";
+    try { nm = a.get(PDFName.of("NM")).decodeText(); } catch (e) { nm = ""; }
+    if (nm.startsWith("tpt-") && imported && imported.has(nm.slice(4))) return false;
+    const oc = a.lookupMaybe(PDFName.of("OC"), PDFDict);
+    const sk = oc && oc.get(PDFName.of(SKETCH_KEY));
+    if (sk) {
+      let lid = "";
+      try { lid = sk.decodeText(); } catch (e) { lid = ""; }
+      if (lid && !doc.layer(lid)) return false;
+    }
+    return true;
+  });
+  leaf.set(PDFName.of("Annots"), ctx.obj(keep));
+}
+
+/** Takes the drawing layers out of a layer list (they go in their own group at the end). */
+function withoutSketch(ctx, arr, sketch) {
+  const { PDFArray, PDFRef } = window.PDFLib;
+  const out = [];
+  for (const v of arr) {
+    const o = v instanceof PDFRef ? ctx.lookup(v) : v;
+    if (o instanceof PDFArray) {
+      const sub = withoutSketch(ctx, o.asArray(), sketch);
+      if (sub.some((x) => x instanceof PDFRef || x instanceof PDFArray)) out.push(ctx.obj(sub));
+    } else if (v instanceof PDFRef && sketch.has(v.toString())) {
+      continue;
+    } else out.push(v);
+  }
+  return out;
+}
+
 /* ---------- hidden layers ---------- */
 
 function makeOcHidden(ctx, hidden) {
@@ -419,6 +529,7 @@ function stripMarkupAnnots(ctx, leaf) {
   if (!annots) return;
   const keep = annots.asArray().filter((r) => {
     const a = ctx.lookupMaybe(r, PDFDict);
+    if (a && a.get(PDFName.of(DRAW_KEY))) return true; // a drawing, not a comment
     const st = a && a.get(PDFName.of("Subtype"));
     return !(st && MARKUP_SUBTYPES.has(st.toString().slice(1)));
   });
@@ -452,7 +563,7 @@ function filterOrder(ctx, arr, hidden) {
  */
 export async function buildPdf(doc, pages, { layers = "all", comments = true, title = "" } = {}) {
   const L = window.PDFLib;
-  const { PDFDocument, PDFName, PDFNumber, PDFArray, PDFDict, PDFNull, PDFObjectCopier, PDFPage, PDFHexString, PDFRef, StandardFonts, degrees } = L;
+  const { PDFDocument, PDFName, PDFNumber, PDFArray, PDFDict, PDFNull, PDFObjectCopier, PDFPage, PDFHexString, PDFString, PDFRef, StandardFonts, degrees } = L;
   const out = await PDFDocument.create({ updateMetadata: false });
   const ctx = out.context;
   const B = { out, ctx, helv: await out.embedFont(StandardFonts.Helvetica), helvB: await out.embedFont(StandardFonts.HelveticaBold), glyphless: null };
@@ -485,13 +596,29 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
   const drawLayerVisible = new Map(doc.layers.map((l) => [l.id, l.visible]));
   const usedLayers = new Set();
   const layerRefs = new Map();
+  const sketchOut = new Set(); // drawing-layer OCGs in the new file (copied or new)
   const layerRef = (id) => {
     if (!layerRefs.has(id)) {
       const l = doc.layer(id);
-      layerRefs.set(id, ctx.register(ctx.obj({ Type: "OCG", Name: PDFHexString.fromText(l ? l.name : "Drawing") })));
+      let ref = null;
+      for (const [sid, srcRef] of Object.entries((l && l.refs) || {})) {
+        const st = states.get(Number(sid));
+        const mapped = st && st.copier && st.copier.traversedObjects.get(refFromId(srcRef));
+        if (mapped && mapped !== PDFNull) { ref = mapped; break; }
+      }
+      if (!ref) {
+        ref = ctx.register(ctx.obj({ Type: "OCG", Name: PDFHexString.fromText(l ? l.name : "Drawing") }));
+        ctx.lookup(ref).set(PDFName.of(SKETCH_KEY), PDFHexString.fromText(id));
+        newSketch.push([id, ref]);
+      } else if (l) {
+        ctx.lookup(ref).set(PDFName.of("Name"), PDFHexString.fromText(l.name)); // renamed here
+      }
+      layerRefs.set(id, ref);
+      sketchOut.add(ref.toString());
     }
     return layerRefs.get(id);
   };
+  const newSketch = [];
 
   for (let pi = 0; pi < pages.length; pi++) {
     const p = pages[pi];
@@ -516,9 +643,11 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
         }
         if (st.hiddenOut.size) stripHidden(ctx, leaf, makeOcHidden(ctx, st.hiddenOut), visited);
       }
+      if (s.imported || s.sketch) dropOldDrawings(ctx, leaf, s.imported, doc);
       if (!comments) stripMarkupAnnots(ctx, leaf);
       page = PDFPage.of(leaf, ref, out);
       out.addPage(page);
+      if (used.length > 1 && !leaf.get(PDFName.of(FILE_KEY))) leaf.set(PDFName.of(FILE_KEY), PDFHexString.fromText(s.name));
       if (!st.firstRef) st.firstRef = ref;
       const uu = info.userUnit || 1;
       m = [1 / uu, 0, 0, -1 / uu, info.view[0], info.view[3]];
@@ -538,6 +667,7 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
       const k = Math.min(pw / uw, ph / uh);
       const ox = (pw - uw * k) / 2, oy = (ph - uh * k) / 2;
       page = out.addPage([pw, ph]);
+      if (used.length > 1) page.node.set(PDFName.of(FILE_KEY), PDFHexString.fromText(s.name));
       page.drawImage(img, { x: ox, y: oy, width: uw * k, height: uh * k });
       if (R) page.setRotation(degrees(R));
       if (!st.firstRef) st.firstRef = page.ref;
@@ -571,16 +701,11 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
           ops += await watermarkOps(B, R, doc.watermark, d2u, g.dw, g.dh);
         }
       }
-      const byLayer = new Map();
+      // your drawings: annotations on their layers, which either app can edit later
+      const author = settings.get("author", "");
       for (const it of marks) {
-        if (!byLayer.has(it.layer)) byLayer.set(it.layer, []);
-        byLayer.get(it.layer).push(it);
-      }
-      for (const [lid, items] of byLayer) {
-        usedLayers.add(lid);
-        ops += `/OC ${R.prop(layerRef(lid))} BDC\n`;
-        for (const it of items) ops += await drawableOps(B, R, drawableFor(it, g.unit), m);
-        ops += "EMC\n";
+        usedLayers.add(it.layer);
+        await addDrawing(B, leaf, page.ref, it, g, m, layerRef(it.layer), author);
       }
       if (ocr && ocr.words.length) {
         const om = mul(m, inv(rot(ocr.R || 0, g.W, g.H)));
@@ -590,6 +715,10 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
       if (comments) {
         for (const it of p.items) if (it.kind === "comment") await addComment(B, leaf, page.ref, it, g.unit, m);
       }
+    }
+    if (p.blockK) {
+      const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+      page.node.set(PDFName.of(SCALE_KEY), PDFNumber.of(+(p.blockK * scale).toFixed(10)));
     }
     for (const it of p.items) {
       if (it.kind !== "blur") continue;
@@ -621,8 +750,14 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
     }
     const D = copied.lookupMaybe(PDFName.of("D"), PDFDict);
     const ord = D && D.lookupMaybe(PDFName.of("Order"), PDFArray);
+    const sketchHere = new Set();
+    for (const id of (s.sketch ? s.sketch.keys() : [])) {
+      const mapped = st.copier.traversedObjects.get(refFromId(id));
+      if (mapped && mapped !== PDFNull) { sketchHere.add(mapped.toString()); sketchOut.add(mapped.toString()); }
+    }
     if (ord) {
-      const items = visibleOnly ? filterOrder(ctx, ord.asArray(), hidden) : ord.asArray();
+      let items = visibleOnly ? filterOrder(ctx, ord.asArray(), hidden) : ord.asArray();
+      if (sketchHere.size) items = withoutSketch(ctx, items, sketchHere);
       if (layered.length > 1) { if (items.length) order.push(ctx.obj([PDFHexString.fromText(baseName(s.name)), ...items])); }
       else order.push(...items);
     }
@@ -646,13 +781,37 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
       for (const k of ["Name", "Creator", "ListMode", "Intent"]) { const v = D.get(PDFName.of(k)); if (v) dExtra[k] = v; }
     }
   }
-  const mine = doc.layers.filter((l) => usedLayers.has(l.id));
-  if (mine.length) {
-    const refs = mine.map((l) => layerRef(l.id));
-    ocgs.push(...refs);
-    mine.forEach((l, i) => (l.visible ? on : off).push(refs[i]));
-    order.push(ctx.obj([PDFHexString.fromText("Drawings"), ...refs]));
+  // the drawing layers: those copied from the files, then the new ones, in the document's order
+  const copiedSketch = new Set();
+  for (const l of doc.layers) {
+    for (const [sid, srcRef] of Object.entries(l.refs || {})) {
+      const st = states.get(Number(sid));
+      const mapped = st && st.copier && st.copier.traversedObjects.get(refFromId(srcRef));
+      if (mapped && mapped !== PDFNull && !(visibleOnly && !l.visible)) copiedSketch.add(mapped.toString());
+    }
   }
+  const groupRefs = [];
+  for (const l of doc.layers) {
+    if (visibleOnly && !l.visible) continue;
+    const already = Object.values(l.refs || {}).some((r) => r);
+    if (!usedLayers.has(l.id) && !already) continue;
+    const ref = layerRef(l.id);
+    if (!groupRefs.some((x) => x.toString() === ref.toString())) groupRefs.push(ref);
+  }
+  for (const r of ocgs.slice()) if (sketchOut.has(r.toString()) && !groupRefs.some((x) => x.toString() === r.toString()) && copiedSketch.has(r.toString())) groupRefs.push(r);
+  for (const [id, ref] of newSketch) {
+    const l = doc.layer(id);
+    ocgs.push(ref);
+    ((l ? l.visible : true) ? on : off).push(ref);
+  }
+  for (const l of doc.layers) { // layers copied from a file follow your on/off here
+    const ref = layerRefs.get(l.id);
+    if (!ref || newSketch.some(([id]) => id === l.id)) continue;
+    const key = ref.toString();
+    for (const arr of [on, off]) { const i = arr.findIndex((x) => x.toString() === key); if (i >= 0) arr.splice(i, 1); }
+    (l.visible ? on : off).push(ref);
+  }
+  if (groupRefs.length) order.push(ctx.obj([PDFString.of(GROUP_LABEL), ...groupRefs]));
   if (ocgs.length) {
     const D = { ...(dExtra || {}), BaseState: "ON", ON: on, OFF: off };
     if (order.length) D.Order = order;
@@ -702,7 +861,8 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
   const now = new Date();
   out.setCreationDate(now);
   out.setModificationDate(now);
-  const bytes = await out.save({ useObjectStreams: true });
+  // no object streams: the Windows app (and a quick look on opening) can find the drawings
+  const bytes = await out.save({ useObjectStreams: false });
   return { bytes, blurs, overlays };
 }
 

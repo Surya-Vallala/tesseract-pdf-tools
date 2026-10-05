@@ -3,6 +3,8 @@
 
 import { blockParts } from "./blocks.js";
 import { mul, apply } from "./geom.js";
+import { LINE_KINDS, BOX_KINDS, lineParts, boxParts, layoutText } from "./dgeom.js";
+export { LINE_KINDS, BOX_KINDS };
 
 export const THICKNESS = { fine: 0.0012, medium: 0.0025, thick: 0.005 };
 
@@ -41,7 +43,9 @@ export const COMMENT_COLORS = ["#B07800", "#C62828", "#1565C0", "#2E7D32"];
 export const SHAPE_NAMES = {
   arrow: "Arrow", curved: "Curved arrow", rect: "Rectangle", circle: "Circle",
   polygon: "Polygon", star: "Star", north: "North arrow", section: "Section", level: "Level",
-  line: "Line", poly: "Shape", block: "Block"
+  line: "Line", poly: "Shape", block: "Block", double_arrow: "Double arrow", round_rect: "Rounded rectangle",
+  triangle: "Triangle", diamond: "Diamond", pentagon: "Pentagon", hexagon: "Hexagon", block_arrow: "Solid arrow",
+  smiley: "Smiley", heart: "Heart", tick: "Tick", cross: "Cross", speech: "Speech bubble", cloud_shape: "Cloud"
 };
 
 const K = 0.5522847498;
@@ -220,12 +224,13 @@ function blockDrawable(it) {
   const m = blockMatrix(it);
   const paths = [], texts = [];
   const color = it.color, w = it.w;
-  if (it.fill) paths.push({ cmds: xfCmds(polyCmds([0, 0, it.bw, 0, it.bw, it.bd, 0, it.bd], true), m), fill: "#FFFFFF", fillOpacity: 1 });
+  const fill = it.fill === true ? "#FFFFFF" : it.fill || "";
+  if (fill) paths.push({ cmds: xfCmds(polyCmds([0, 0, it.bw, 0, it.bw, it.bd, 0, it.bd], true), m), fill, fillOpacity: it.fa == null ? 1 : it.fa });
   const dashOn = Math.max(110 * it.k, w * 3), dashOff = Math.max(75 * it.k, w * 2);
   for (const part of blockParts(it.family, it.bw, it.bd, it.p)) {
     if (part.text) {
       const q = apply(m, part.x, part.y);
-      texts.push({ text: part.text, x: q[0], y: q[1], size: part.size * it.k, color, anchor: "middle", baseline: "middle" });
+      texts.push({ text: part.text, x: q[0], y: q[1], size: part.size * it.k, color, anchor: "middle", baseline: "middle", rot: it.rot || 0 });
       continue;
     }
     const path = { cmds: xfCmds(part.cmds, m), stroke: color, w };
@@ -236,117 +241,94 @@ function blockDrawable(it) {
   return { paths, texts };
 }
 
-export function shapeDrawable(it, unit) {
-  if (it.shape === "block") return blockDrawable(it);
-  const { x1, y1, x2, y2, color } = it;
-  const w = it.w;
-  const fill = it.fill ? color : null;
+/** The fill colour of a shape ("" for none). Older items said fill: true for a light fill of the line colour. */
+export function fillOf(it) {
+  if (it.fill === true) return it.color;
+  return typeof it.fill === "string" ? it.fill : "";
+}
+export function fillOpacityOf(it) {
+  if (it.fa != null) return it.fa;
+  return it.fill === true ? 0.18 : 1;
+}
+
+/** A box shape's frame: centre, size and turn (it.rot, degrees clockwise). */
+export function shapeFrame(it) {
+  const cx = (it.x1 + it.x2) / 2, cy = (it.y1 + it.y2) / 2;
+  const a = ((it.rot || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  return { cx, cy, w: Math.abs(it.x2 - it.x1), h: Math.abs(it.y2 - it.y1), a, m: [c, s, -s, c, cx, cy] };
+}
+
+/** The bend point of a curved arrow (kept on the item once it has been moved). */
+export function curveControl(it) {
+  if (it.qx != null && it.qy != null) return [it.qx, it.qy];
+  const dx = it.x2 - it.x1, dy = it.y2 - it.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  return [(it.x1 + it.x2) / 2 + (dy / len) * len * 0.28, (it.y1 + it.y2) / 2 - (dx / len) * len * 0.28];
+}
+
+const CAPS = { 0: "butt", 1: "round", 2: "square" };
+
+function partsToDrawable(parts, texts, m, rotDeg, opacity) {
   const paths = [];
-  const texts = [];
-  const bx0 = Math.min(x1, x2), by0 = Math.min(y1, y2), bx1 = Math.max(x1, x2), by1 = Math.max(y1, y2);
-  const cx = (bx0 + bx1) / 2, cy = (by0 + by1) / 2;
-  const bw = bx1 - bx0, bh = by1 - by0;
-  const tsize = Math.max(unit * 0.008, Math.min(unit * 0.04, Math.min(bw, bh) * 0.26));
-  const dx = x2 - x1, dy = y2 - y1;
-  const len = Math.hypot(dx, dy);
-  switch (it.shape) {
-    case "arrow": {
-      const hs = Math.min(len * 0.4, Math.max(w * 5, unit * 0.012));
-      const ux = len ? dx / len : 1, uy = len ? dy / len : 0;
-      paths.push({ cmds: [["M", x1, y1], ["L", x2 - ux * hs * 0.9, y2 - uy * hs * 0.9]], stroke: color, w });
-      paths.push(headFilled(x2, y2, dx, dy, hs, color));
-      if (it.text) texts.push(...textBlock(it.text, x1, y1 - tsize, tsize, color));
-      break;
+  for (const p of parts) {
+    const cmds = [];
+    for (const sub of p.subs) cmds.push(...xfCmds(sub, m));
+    const path = { cmds };
+    if (p.mode === "F" || p.mode === "B") { path.fill = p.fill; path.fillOpacity = p.fa == null ? 1 : p.fa; }
+    if (p.mode === "S" || p.mode === "B") {
+      path.stroke = p.stroke; path.w = p.w; path.cap = CAPS[p.cap] || "round";
+      if (p.join === 0) path.join = "miter";
+      if (p.dash) path.dash = p.dash;
     }
-    case "curved": {
-      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-      const qx = mx + (dy / (len || 1)) * len * 0.3, qy = my - (dx / (len || 1)) * len * 0.3;
-      const hs = Math.min(len * 0.4, Math.max(w * 5, unit * 0.012));
-      const tdx = x2 - qx, tdy = y2 - qy;
-      const tl = Math.hypot(tdx, tdy) || 1;
-      const ex = x2 - (tdx / tl) * hs * 0.9, ey = y2 - (tdy / tl) * hs * 0.9;
-      paths.push({ cmds: [["M", x1, y1], ["C", x1 + (2 / 3) * (qx - x1), y1 + (2 / 3) * (qy - y1), ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), ex, ey]], stroke: color, w });
-      paths.push(headFilled(x2, y2, tdx, tdy, hs, color));
-      if (it.text) texts.push(...textBlock(it.text, x1, y1 - tsize, tsize, color));
-      break;
-    }
-    case "line":
-      paths.push({ cmds: [["M", x1, y1], ["L", x2, y2]], stroke: color, w });
-      break;
-    case "poly":
-      paths.push({ cmds: polyCmds(it.pts, true), stroke: color, w, fill, fillOpacity: 0.18 });
-      break;
-    case "rect":
-      paths.push({ cmds: polyCmds([bx0, by0, bx1, by0, bx1, by1, bx0, by1], true), stroke: color, w, fill, fillOpacity: 0.18 });
-      if (it.text) texts.push(...textBlock(it.text, cx, cy, tsize, color));
-      break;
-    case "circle":
-      paths.push({ cmds: ellipse(cx, cy, bw / 2, bh / 2), stroke: color, w, fill, fillOpacity: 0.18 });
-      if (it.text) texts.push(...textBlock(it.text, cx, cy, tsize, color));
-      break;
-    case "polygon": {
-      const n = Math.max(3, Math.min(12, it.sides || 6));
-      const pts = [];
-      for (let i = 0; i < n; i++) {
-        const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-        pts.push(cx + (bw / 2) * Math.cos(a), cy + (bh / 2) * Math.sin(a));
-      }
-      paths.push({ cmds: polyCmds(pts, true), stroke: color, w, fill, fillOpacity: 0.18 });
-      if (it.text) texts.push(...textBlock(it.text, cx, cy, tsize * 0.85, color));
-      break;
-    }
-    case "star": {
-      const pts = [];
-      for (let i = 0; i < 10; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 5;
-        const r = i % 2 ? 0.45 : 1;
-        pts.push(cx + (bw / 2) * r * Math.cos(a), cy + (bh / 2) * r * Math.sin(a));
-      }
-      paths.push({ cmds: polyCmds(pts, true), stroke: color, w, fill, fillOpacity: 0.18 });
-      if (it.text) texts.push(...textBlock(it.text, cx, cy, tsize * 0.7, color));
-      break;
-    }
-    case "north": {
-      const r = Math.max(len / 2, unit * 0.01);
-      const ux = len ? dx / len : 0, uy = len ? dy / len : -1;
-      const ox = (x1 + x2) / 2, oy = (y1 + y2) / 2;
-      const L = (u, v) => [ox + ux * u * r - uy * v * r, oy + uy * u * r + ux * v * r];
-      paths.push({ cmds: ellipse(ox, oy, r, r), stroke: color, w });
-      const t = L(0.92, 0), bl = L(-0.62, 0.42), nc = L(-0.3, 0), br = L(-0.62, -0.42);
-      paths.push({ cmds: [["M", ...t], ["L", ...bl], ["L", ...nc], ["Z"]], stroke: color, w: w * 0.8, fill: color, fillOpacity: 1 });
-      paths.push({ cmds: [["M", ...t], ["L", ...br], ["L", ...nc], ["Z"]], stroke: color, w: w * 0.8 });
-      const np = L(1.3, 0);
-      texts.push({ text: it.text || "N", x: np[0], y: np[1], size: r * 0.42, color, anchor: "middle", baseline: "middle", bold: true });
-      break;
-    }
-    case "section": {
-      const r = Math.max(unit * 0.012, Math.min(len * 0.45, unit * 0.05));
-      const ux = len ? dx / len : 1, uy = len ? dy / len : 0;
-      const tip = [x1 + ux * r * 1.7, y1 + uy * r * 1.7];
-      const pa = [x1 - uy * r * 0.98, y1 + ux * r * 0.98], pb = [x1 + uy * r * 0.98, y1 - ux * r * 0.98];
-      paths.push({ cmds: [["M", ...tip], ["L", ...pa], ["L", ...pb], ["Z"]], fill: color, fillOpacity: 1 });
-      paths.push({ cmds: ellipse(x1, y1, r, r), stroke: color, w, fill: "#FFFFFF", fillOpacity: 1 });
-      paths.push({ cmds: [["M", x1 - r, y1], ["L", x1 + r, y1]], stroke: color, w });
-      texts.push({ text: it.text || "A", x: x1, y: y1 - r * 0.45, size: r * 0.55, color, anchor: "middle", baseline: "middle", bold: true });
-      if (it.text2) texts.push({ text: it.text2, x: x1, y: y1 + r * 0.45, size: r * 0.4, color, anchor: "middle", baseline: "middle" });
-      break;
-    }
-    case "level": {
-      const s = Math.max(w * 3, unit * 0.006);
-      const xEnd = Math.abs(dx) > s * 3 ? x2 : x1 + s * 12;
-      paths.push({ cmds: [["M", Math.min(x1 - s * 2, xEnd), y1], ["L", Math.max(x1 + s * 2, xEnd), y1]], stroke: color, w });
-      paths.push({ cmds: [["M", x1 - s, y1 - s * 1.7], ["L", x1 + s, y1 - s * 1.7], ["L", x1, y1], ["Z"]], stroke: color, w: w * 0.8, fill: color, fillOpacity: 1 });
-      texts.push({ text: it.text || "+0.00", x: x1 + s * 1.8, y: y1 - s * 0.95, size: s * 1.9, color, anchor: "start", baseline: "middle" });
-      break;
+    if (opacity != null && opacity < 0.999) path.opacity = opacity;
+    paths.push(path);
+  }
+  const outTexts = [];
+  for (const t of texts) {
+    for (const ln of layoutText(t)) {
+      const q = apply(m, ln.x, ln.y);
+      outTexts.push({ text: ln.text, x: q[0], y: q[1], size: ln.size, color: ln.color, anchor: ln.anchor, baseline: "middle", bold: ln.bold, rot: rotDeg || 0, opacity });
     }
   }
-  return { paths, texts };
+  return { paths, texts: outTexts };
+}
+
+/** How a shape item is drawn (base units). pt: base units per PDF point on its page. */
+export function shapeDrawable(it, unit, pt = 1) {
+  if (it.shape === "block") return blockDrawable(it);
+  const opacity = it.opacity == null ? 1 : it.opacity;
+  const style = {
+    color: it.color, w: it.w, dashed: !!it.dashed, hs: it.hs || 0, fill: fillOf(it), fa: fillOpacityOf(it),
+    label: it.shape === "section" && it.text2 ? `${it.text || ""}\n${it.text2}` : it.text || "", ls: it.ls || 0, sides: it.sides || 6
+  };
+  if (LINE_KINDS.has(it.shape)) {
+    const pts = it.shape === "curved" ? [[it.x1, it.y1], curveControl(it), [it.x2, it.y2]] : [[it.x1, it.y1], [it.x2, it.y2]];
+    return partsToDrawable(lineParts(it.shape, pts, style, pt), [], [1, 0, 0, 1, 0, 0], 0, opacity);
+  }
+  if (it.shape === "poly") {
+    const b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (let i = 0; i < it.pts.length; i += 2) {
+      b.x0 = Math.min(b.x0, it.pts[i]); b.x1 = Math.max(b.x1, it.pts[i]);
+      b.y0 = Math.min(b.y0, it.pts[i + 1]); b.y1 = Math.max(b.y1, it.pts[i + 1]);
+    }
+    const w = Math.max(b.x1 - b.x0, 1e-6), h = Math.max(b.y1 - b.y0, 1e-6);
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    style.upts = [];
+    for (let i = 0; i < it.pts.length; i += 2) style.upts.push([(it.pts[i] - cx) / w, (it.pts[i + 1] - cy) / h]);
+    const { parts, texts } = boxParts("poly", w, h, style, pt);
+    return partsToDrawable(parts, texts, [1, 0, 0, 1, cx, cy], 0, opacity);
+  }
+  const f = shapeFrame(it);
+  const { parts, texts } = boxParts(BOX_KINDS.has(it.shape) ? it.shape : "rect", f.w, f.h, style, pt);
+  return partsToDrawable(parts, texts, f.m, it.rot || 0, opacity);
 }
 
 export function inkDrawable(it) {
   const k = PEN_KIND[it.pen] || PEN_KIND.pen;
-  const cmds = it.pts.length === 4 ? polyCmds(it.pts, false) : smoothCmds(it.pts);
-  return { paths: [{ cmds, stroke: it.color, w: it.w, opacity: k.opacity, multiply: !!k.multiply, cap: it.pen === "highlighter" ? "butt" : "round" }], texts: [] };
+  // strokes from the Windows app are drawn as they are there: straight between their points
+  const cmds = it.pts.length === 4 || it.poly ? polyCmds(it.pts, false) : smoothCmds(it.pts);
+  const opacity = it.opacity == null ? k.opacity : it.opacity;
+  return { paths: [{ cmds, stroke: it.color, w: it.w, opacity, multiply: !!k.multiply, cap: it.pen === "highlighter" ? "square" : "round" }], texts: [] };
 }
 
 export function commentDrawable(it, unit) {
@@ -390,7 +372,7 @@ export function commentAnchor(it) {
 }
 
 // Bounding box of any item (base units), used for selection and hit tests.
-export function itemBounds(it, unit) {
+export function itemBounds(it, unit, pt = 1) {
   let pts;
   if (it.kind === "ink") pts = it.pts;
   else if (it.kind === "blur") pts = [it.x0, it.y0, it.x1, it.y1];
@@ -399,7 +381,7 @@ export function itemBounds(it, unit) {
     else if (it.ctype === "free") pts = it.pts;
     else pts = [it.ax, it.ay, it.tx, it.ty, it.tx + it.tw, it.ty + it.th];
   } else {
-    const d = shapeDrawable(it, unit);
+    const d = shapeDrawable(it, unit, pt);
     pts = [];
     for (const p of d.paths) for (const c of p.cmds) for (let i = 1; i < c.length; i += 2) pts.push(c[i], c[i + 1]);
     for (const t of d.texts) pts.push(t.x - t.size, t.y - t.size, t.x + t.size, t.y + t.size);
@@ -413,9 +395,9 @@ export function itemBounds(it, unit) {
   return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
 }
 
-export function drawableFor(it, unit) {
+export function drawableFor(it, unit, pt = 1) {
   if (it.kind === "ink") return inkDrawable(it);
-  if (it.kind === "shape") return shapeDrawable(it, unit);
+  if (it.kind === "shape") return shapeDrawable(it, unit, pt);
   if (it.kind === "comment") return commentDrawable(it, unit);
   return { paths: [], texts: [] };
 }
@@ -438,14 +420,17 @@ export function drawableToSVG(d, extraAttrs = "") {
     const attrs = [`d="${cmdsToSVG(p.cmds)}"`];
     if (p.fill) attrs.push(`fill="${p.fill}"`, `fill-opacity="${p.fillOpacity ?? 1}"`);
     else attrs.push('fill="none"');
-    if (p.stroke) attrs.push(`stroke="${p.stroke}"`, `stroke-width="${f(p.w)}"`, `stroke-linecap="${p.cap || "round"}"`, 'stroke-linejoin="round"');
+    if (p.stroke) attrs.push(`stroke="${p.stroke}"`, `stroke-width="${f(p.w)}"`, `stroke-linecap="${p.cap || "round"}"`, `stroke-linejoin="${p.join || "round"}"`);
     if (p.stroke && p.dash) attrs.push(`stroke-dasharray="${f(p.dash[0])} ${f(p.dash[1])}"`);
     if (p.opacity != null && p.opacity < 1) attrs.push(`opacity="${p.opacity}"`);
     if (p.multiply) attrs.push('style="mix-blend-mode:multiply"');
     out += `<path ${attrs.join(" ")}${extraAttrs}/>`;
   }
   for (const t of d.texts) {
-    out += `<text x="${f(t.x)}" y="${f(t.y)}" font-size="${f(t.size)}" fill="${t.color}" text-anchor="${t.anchor === "start" ? "start" : "middle"}" dominant-baseline="central" font-family="Helvetica, Arial, sans-serif"${t.bold ? ' font-weight="700"' : ""}>${escXML(t.text)}</text>`;
+    const anchor = t.anchor === "start" ? "start" : t.anchor === "end" ? "end" : "middle";
+    const turn = t.rot ? ` transform="rotate(${f(t.rot)} ${f(t.x)} ${f(t.y)})"` : "";
+    const op = t.opacity != null && t.opacity < 0.999 ? ` opacity="${t.opacity}"` : "";
+    out += `<text x="${f(t.x)}" y="${f(t.y)}" font-size="${f(t.size)}" fill="${t.color}" text-anchor="${anchor}" dominant-baseline="central" font-family="Arial, Helvetica, sans-serif"${t.bold ? ' font-weight="700"' : ""}${turn}${op}>${escXML(t.text)}</text>`;
   }
   return out;
 }

@@ -6,8 +6,9 @@ import { apply, inv, bbox, distToPolyline, distToSeg } from "./geom.js";
 import {
   PEN_KIND, PEN_COLORS, HIGHLIGHT_COLORS, COMMENT_COLORS, SHAPE_NAMES, thickFactor, levelOf, levelForWidth, levelPx,
   inkDrawable, shapeDrawable, commentDrawable, drawableToSVG, drawableFor, itemBounds,
-  smoothPoints, thinPoints, blockMatrix
+  smoothPoints, thinPoints, blockMatrix, shapeFrame, curveControl, fillOf
 } from "./shapes.js";
+import { LINE_KINDS, LABEL_KINDS, CLOSED_KINDS } from "./dgeom.js";
 import { icon, esc, h, segmented, openSheet, promptDialog, openMenu, toast, pushLayer, closeLayer } from "./ui.js";
 import { settings } from "./platform.js";
 import { recognizeShape } from "./snap.js";
@@ -17,8 +18,11 @@ import {
 } from "./blockui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
-const POINT_SHAPES = new Set(["arrow", "curved", "north", "section", "level", "line"]);
-const CLOSED_SHAPES = new Set(["rect", "circle", "polygon", "star", "poly"]);
+// Lines and arrows are edited by their ends; every other shape is a box that can be turned.
+const POINT_SHAPES = LINE_KINDS;
+const CLOSED_SHAPES = CLOSED_KINDS;
+const SYMBOLS = new Set(["north", "section", "level"]);
+const LIGHT_FILL = 0.18; // the phone fills shapes lightly with their line colour
 const HOLD_MS = 520;
 const isBlock = (it) => it && it.kind === "shape" && it.shape === "block";
 
@@ -125,7 +129,7 @@ export class Markup {
     const l = doc.layer(doc.activeLayer);
     const isComment = this.tool === "comment" || this.tool === "blur";
     this.chip.innerHTML = isComment
-      ? `<span class="chip-note">${this.tool === "comment" ? "Comments sit above all layers" : "Blur covers every layer"}</span>`
+      ? `<span class="chip-note">${this.tool === "comment" ? "Comments sit above all layers" : "Blur hides what's in the PDF"}</span>`
       : `<span class="chip-text">Drawing on <b>${esc(l ? l.name : "a new layer")}</b></span>${icon("chevdown")}`;
     this.chip.classList.toggle("note", isComment);
     this.chip.disabled = isComment;
@@ -164,7 +168,7 @@ export class Markup {
       rng.addEventListener("change", () => this.savePrefs());
       o.appendChild(sz);
     } else if (tool === "blur") {
-      o.appendChild(h(`<p class="opt-note">Drag over anything to hide it. It's blurred for good when you save.</p>`));
+      o.appendChild(h(`<p class="opt-note">Drag over the PDF to hide what's there. It's blurred for good when you save. Your drawings stay on top.</p>`));
     } else if (tool === "shapes") {
       const b = h(`<button type="button" class="chip-btn">${icon(this.shape.shape)}<span>${esc(SHAPE_NAMES[this.shape.shape])}</span>${icon("chevdown")}</button>`);
       b.addEventListener("click", () => this.openShapes());
@@ -205,10 +209,13 @@ export class Markup {
             })
           }), "Colour and thickness"));
         } else {
-          this.appendShapeStyle(o, { color: selItem.color, thick: this.thickOf(selItem), fill: selItem.fill, shape: selItem.shape, sides: selItem.sides }, (patch) => this.editSelected((it) => {
-            if (patch.color) it.color = patch.color;
+          this.appendShapeStyle(o, { color: selItem.color, thick: this.thickOf(selItem), fill: !!fillOf(selItem), shape: selItem.shape, sides: selItem.sides }, (patch) => this.editSelected((it) => {
+            if (patch.color) {
+              if (fillOf(it) && fillOf(it) === it.color) it.fill = patch.color;
+              it.color = patch.color;
+            }
             if (patch.thick) it.w = thickFactor(patch.thick) * this.unitFor(this.sel.key);
-            if (patch.fill != null) it.fill = patch.fill;
+            if (patch.fill != null) { it.fill = patch.fill ? it.color : ""; it.fa = LIGHT_FILL; }
             if (patch.sides) it.sides = patch.sides;
           }));
         }
@@ -464,14 +471,17 @@ export class Markup {
     const r = this.viewer.root.getBoundingClientRect();
     let [cx, cy] = this.viewer.toBase(vit, r.left + r.width / 2, r.top + r.height * 0.42);
     const c = g.crop;
-    cx = Math.max(c.x0 * g.W, Math.min(c.x1 * g.W, cx));
-    cy = Math.max(c.y0 * g.H, Math.min(c.y1 * g.H, cy));
+    // the whole block on the page, where there is room for it
+    const half = (Math.max(tile.w, tile.d) * k) / 2;
+    const fit = (v, lo, hi) => (hi - lo > 2 * half ? Math.max(lo + half, Math.min(hi - half, v)) : (lo + hi) / 2);
+    cx = fit(cx, c.x0 * g.W, c.x1 * g.W);
+    cy = fit(cy, c.y0 * g.H, c.y1 * g.H);
     const layer = doc.ensureLayer();
     doc.commit();
     const it = {
       id: newId(), kind: "shape", shape: "block", family: tile.family, name: tile.name, bw: tile.w, bd: tile.d, p: tile.p ? structuredClone(tile.p) : null,
       x1: cx, y1: cy, x2: cx, y2: cy, rot: (360 - g.R) % 360, flip: false, k,
-      color: this.block.color, w: thickFactor(this.block.thick) * g.unit, fill: !!this.block.fill, text: "", layer: layer.id
+      color: this.block.color, w: thickFactor(this.block.thick) * g.unit, fill: this.block.fill ? "#FFFFFF" : "", text: "", layer: layer.id
     };
     vit.p.items.push(it);
     rememberBlock(tile);
@@ -497,8 +507,9 @@ export class Markup {
         this.savePrefs();
       }
     }), "Colour and thickness"));
-    const f = h(`<button type="button" role="switch" aria-checked="${!!it.fill}" class="chip-btn toggle tight${it.fill ? " on" : ""}"><span class="fill-box white"></span><span>Fill</span></button>`);
-    f.addEventListener("click", () => { this.editSelected((x) => { x.fill = !x.fill; }); this.block.fill = !it.fill; this.savePrefs(); });
+    const filled = !!(it.fill === true ? "#FFFFFF" : it.fill);
+    const f = h(`<button type="button" role="switch" aria-checked="${filled}" class="chip-btn toggle tight${filled ? " on" : ""}"><span class="fill-box white"></span><span>Fill</span></button>`);
+    f.addEventListener("click", () => { this.editSelected((x) => { x.fill = filled ? "" : "#FFFFFF"; x.fa = 1; }); this.block.fill = !filled; this.savePrefs(); });
     o.appendChild(f);
     const vit = this.viewer.itemFor(this.sel.key);
     const photo = vit && this.doc.src(vit.p).kind === "image";
@@ -697,7 +708,7 @@ export class Markup {
     const vit = this.viewer.itemFor(this.sel.key);
     if (!vit) return;
     const g = this.viewer.geom(vit);
-    const b = itemBounds(item, g.unit);
+    const b = itemBounds(item, g.unit, g.pt);
     const corners = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]].map(([x, y]) => apply(g.b2d, x, y));
     const xs = corners.map((c) => c[0]), ys = corners.map((c) => c[1]);
     const sx = vit.w / g.dw;
@@ -736,13 +747,15 @@ export class Markup {
       bar.appendChild(sb);
       add("turn", "Turn", () => this.editSelected((x) => { x.rot = ((x.rot || 0) + 90) % 360; }));
       add("flip", "Flip", () => this.editSelected((x) => { x.flip = !x.flip; }));
-    } else if (item.kind === "shape" && item.shape !== "line" && item.shape !== "poly") add("text", "Edit text", () => this.editText(item));
+    } else if (item.kind === "shape" && (LABEL_KINDS.has(item.shape) || item.shape === "north")) add("text", "Edit text", () => this.editText(item));
     if (item.kind === "comment") add("edit", "Edit", () => this.onComment && this.onComment("edit", this.sel.key, item.id));
     if (item.kind !== "comment" && item.kind !== "blur") add("copy", "Copy", () => this.duplicateSelected());
     add("trash", "Delete", () => this.deleteSelected(), true);
     bar.classList.toggle("labels", isBlock(item));
     const top = T - 52;
-    bar.style.top = (isBlock(item) ? pillY : top < this.viewer.root.scrollTop + 4 ? T + H + 8 : top) + "px";
+    // shapes that can be turned have their turn handle above them: the bar goes below
+    const turnable = item.kind === "shape" && !POINT_SHAPES.has(item.shape) && item.shape !== "poly";
+    bar.style.top = (isBlock(item) ? pillY : turnable || top < this.viewer.root.scrollTop + 4 ? T + H + 8 : top) + "px";
     ui.appendChild(bar);
     this.viewer.wrap.appendChild(ui);
     const bw = bar.offsetWidth;
@@ -770,7 +783,16 @@ export class Markup {
       for (let i = 0; i < item.pts.length; i += 2) pts.push({ k: "v" + i / 2, b: [item.pts[i], item.pts[i + 1]] });
     } else if (item.kind === "shape" && POINT_SHAPES.has(item.shape)) {
       pts.push({ k: "p1", b: [item.x1, item.y1] }, { k: "p2", b: [item.x2, item.y2] });
-    } else if ((item.kind === "shape" && CLOSED_SHAPES.has(item.shape)) || item.kind === "blur" || (item.kind === "comment" && item.ctype === "box")) {
+    } else if (item.kind === "shape") {
+      // a box shape: its corners (turned with it) and the turn handle above its top edge
+      const f = shapeFrame(item);
+      const c = Math.cos(f.a), s = Math.sin(f.a);
+      const at = (u, v) => [f.cx + c * u - s * v, f.cy + s * u + c * v];
+      const hw = f.w / 2, hh = f.h / 2;
+      pts.push({ k: "c00", b: at(-hw, -hh) }, { k: "c10", b: at(hw, -hh) }, { k: "c11", b: at(hw, hh) }, { k: "c01", b: at(-hw, hh) });
+      const off = 34 * this.viewer.basePerPx(vit);
+      pts.push({ k: "rot", b: at(0, -hh - off) });
+    } else if (item.kind === "blur" || (item.kind === "comment" && item.ctype === "box")) {
       const r = item.kind === "shape" ? { x0: Math.min(item.x1, item.x2), y0: Math.min(item.y1, item.y2), x1: Math.max(item.x1, item.x2), y1: Math.max(item.y1, item.y2) } : { x0: Math.min(item.x0, item.x1), y0: Math.min(item.y0, item.y1), x1: Math.max(item.x0, item.x1), y1: Math.max(item.y0, item.y1) };
       pts.push({ k: "c00", b: [r.x0, r.y0] }, { k: "c10", b: [r.x1, r.y0] }, { k: "c11", b: [r.x1, r.y1] }, { k: "c01", b: [r.x0, r.y1] });
     } else if (item.kind === "comment" && item.ctype === "leader") {
@@ -785,7 +807,7 @@ export class Markup {
     const v = await promptDialog({
       title: isSection ? "Section marker" : "Text inside",
       message: isSection ? "First line: the section name. Second line: the sheet it's on (optional)." : "",
-      value: isSection ? [item.text || "A", item.text2 || ""].filter((x, i) => i === 0 || x).join("\n") : item.text || "",
+      value: isSection ? [item.text || "A", item.text2 || ""].filter((x, i) => i === 0 || x).join("\n").replace(/\n\n.*$/s, "") : item.text || "",
       multiline: true,
       okText: "Done"
     });
@@ -794,8 +816,8 @@ export class Markup {
     this.editSelected((it) => {
       if (isSection) {
         const [a, b] = v.split("\n");
-        it.text = (a || "").trim();
-        it.text2 = (b || "").trim();
+        it.text = [(a || "").trim(), (b || "").trim()].filter((x, i) => i === 0 || x).join("\n");
+        delete it.text2;
       } else it.text = v.replace(/\s+$/, "");
     });
   }
@@ -841,7 +863,7 @@ export class Markup {
       if (it.kind === "comment" && (!includeComments || !doc.commentsVisible)) continue;
       if (it.kind === "ink") {
         if (distToPolyline(bx, by, it.pts) <= tol + it.w / 2) return it;
-      } else if (it.kind === "shape" && (it.shape === "arrow" || it.shape === "curved" || it.shape === "line")) {
+      } else if (it.kind === "shape" && POINT_SHAPES.has(it.shape)) {
         if (distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= tol + it.w) return it;
       } else if (isBlock(it)) {
         const [lx, ly] = apply(inv(blockMatrix(it)), bx, by);
@@ -850,8 +872,15 @@ export class Markup {
       } else if (it.kind === "shape" && it.shape === "poly") {
         const b = bbox(it.pts);
         if (bx >= b.x0 - tol && bx <= b.x1 + tol && by >= b.y0 - tol && by <= b.y1 + tol) return it;
+      } else if (it.kind === "shape") {
+        const f = shapeFrame(it);
+        const c = Math.cos(f.a), s = Math.sin(f.a);
+        const u = c * (bx - f.cx) + s * (by - f.cy), v = -s * (bx - f.cx) + c * (by - f.cy);
+        if (Math.abs(u) <= f.w / 2 + tol && Math.abs(v) <= f.h / 2 + tol) return it;
+        const b = itemBounds(it, g.unit, g.pt); // text or heads outside the box
+        if (bx >= b.x0 - tol && bx <= b.x1 + tol && by >= b.y0 - tol && by <= b.y1 + tol && SYMBOLS.has(it.shape)) return it;
       } else {
-        const b = itemBounds(it, g.unit);
+        const b = itemBounds(it, g.unit, g.pt);
         if (bx >= b.x0 - tol && bx <= b.x1 + tol && by >= b.y0 - tol && by <= b.y1 + tol) return it;
       }
     }
@@ -1010,7 +1039,8 @@ export class Markup {
       const [x0, y0] = g.b0;
       this.viewer.setLive(g.key, `<rect x="${Math.min(x0, bx)}" y="${Math.min(y0, by)}" width="${Math.abs(bx - x0)}" height="${Math.abs(by - y0)}" fill="rgba(31,78,121,0.15)" stroke="#1F4E79" stroke-dasharray="${unit * 0.006}" stroke-width="${unit * 0.0015}"/>`);
     } else if (g.type === "shape") {
-      this.viewer.setLive(g.key, drawableToSVG(shapeDrawable(this.shapeItem(g.b0, g.b1, unit), unit)));
+      const gg = this.viewer.geom(g.vit);
+      this.viewer.setLive(g.key, drawableToSVG(shapeDrawable(this.shapeItem(g.b0, g.b1, unit, gg), unit, gg.pt)));
     } else if (g.type === "c-box") {
       const [x0, y0] = g.b0;
       this.viewer.setLive(g.key, drawableToSVG(commentDrawable({ ctype: "box", x0, y0, x1: bx, y1: by, color: this.comment.color, cloud: this.comment.cloud, w: unit * 0.0018 }, unit)));
@@ -1037,7 +1067,7 @@ export class Markup {
     if (g.type === "ink" && g.snap) {
       const layer = doc.ensureLayer();
       doc.commit();
-      p.items.push({ ...this.snapItem(g.snap, unit), id: newId(), layer: layer.id });
+      p.items.push({ ...this.snapItem(g.snap, unit, this.viewer.geom(g.vit)), id: newId(), layer: layer.id });
       this.updateChip();
       this.changed();
     } else if (g.type === "ink") {
@@ -1066,13 +1096,23 @@ export class Markup {
       this.changed();
     } else if (g.type === "shape") {
       let b1 = g.b1 || g.b0;
+      const gg = this.viewer.geom(g.vit);
+      let b0 = g.b0;
       if (!moved || Math.hypot(b1[0] - g.b0[0], b1[1] - g.b0[1]) < unit * 0.01) {
-        const d = unit * 0.06;
-        b1 = POINT_SHAPES.has(this.shape.shape) ? [g.b0[0] + (this.shape.shape === "north" ? 0 : d), g.b0[1] - (this.shape.shape === "north" ? d : 0)] : [g.b0[0] + d * 1.4, g.b0[1] + d];
+        const sh = this.shape.shape;
+        if (POINT_SHAPES.has(sh)) b1 = [g.b0[0] + unit * 0.06, g.b0[1]];
+        else {
+          // the sizes the Windows app uses for a click without a drag
+          const size = (SYMBOLS.has(sh) ? 40 : 60) * sheetUnit(gg) * gg.pt;
+          let w = size, hh = size;
+          if (sh === "level") { w = size * 2.6; hh = size * 0.7; } else if (sh === "section") { w = size * 1.7; hh = size; } else if (sh === "north") { w = size * 0.8; hh = size; }
+          b0 = [g.b0[0] - w / 2, g.b0[1] - hh / 2];
+          b1 = [g.b0[0] + w / 2, g.b0[1] + hh / 2];
+        }
       }
       const layer = doc.ensureLayer();
       doc.commit();
-      const it = { ...this.shapeItem(g.b0, b1, unit), id: newId(), layer: layer.id };
+      const it = { ...this.shapeItem(b0, b1, unit, gg), id: newId(), layer: layer.id };
       p.items.push(it);
       this.sel = { key: p.key, id: it.id };
       this.updateChip();
@@ -1117,27 +1157,41 @@ export class Markup {
     if (this.pen.type === "highlighter" && r.shape !== "line") return;
     g.snap = r;
     const unit = this.viewer.geom(g.vit).unit;
-    this.viewer.setLive(g.key, drawableToSVG(drawableFor(this.snapItem(r, unit), unit)));
+    const gg = this.viewer.geom(g.vit);
+    this.viewer.setLive(g.key, drawableToSVG(drawableFor(this.snapItem(r, unit, gg), unit, gg.pt)));
     try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) { /* not supported */ }
   }
 
-  snapItem(r, unit) {
+  snapItem(r, unit, gg) {
     if (this.pen.type === "highlighter") return this.inkItem([r.x1, r.y1, r.x2, r.y2], unit);
     const k = PEN_KIND[this.pen.type] || PEN_KIND.pen;
-    const it = { kind: "shape", shape: r.shape, color: this.pen.color, w: thickFactor(this.pen.thick) * unit * k.mult, fill: false, text: "" };
+    const w = thickFactor(this.pen.thick) * unit * k.mult;
+    const it = { kind: "shape", shape: r.shape, color: this.pen.color, w, fill: "", text: "", rot: 0 };
     if (r.pts) {
       const b = bbox(r.pts);
       Object.assign(it, { pts: r.pts.slice(), x1: b.x0, y1: b.y0, x2: b.x1, y2: b.y1 });
     } else Object.assign(it, { x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 });
+    if (r.shape === "arrow") it.hs = arrowHead(w, gg);
+    if (r.shape !== "line" && r.shape !== "arrow") it.ls = defaultFont(gg);
     return it;
   }
 
-  shapeItem(b0, b1, unit) {
+  shapeItem(b0, b1, unit, gg) {
     const st = this.shape;
-    const it = { kind: "shape", shape: st.shape, color: st.color, w: thickFactor(st.thick) * unit, fill: !!st.fill, x1: b0[0], y1: b0[1], x2: b1[0], y2: b1[1], text: "" };
+    const w = thickFactor(st.thick) * unit;
+    const it = { kind: "shape", shape: st.shape, color: st.color, w, fill: st.fill && CLOSED_SHAPES.has(st.shape) ? st.color : "", fa: LIGHT_FILL, text: "", rot: 0 };
+    if (POINT_SHAPES.has(st.shape)) {
+      Object.assign(it, { x1: b0[0], y1: b0[1], x2: b1[0], y2: b1[1] });
+      it.hs = arrowHead(w, gg);
+      if (st.shape === "curved") [it.qx, it.qy] = curveControl(it);
+      return it;
+    }
+    // a box, dragged corner to corner
+    Object.assign(it, { x1: Math.min(b0[0], b1[0]), y1: Math.min(b0[1], b1[1]), x2: Math.max(b0[0], b1[0]), y2: Math.max(b0[1], b1[1]) });
     if (st.shape === "polygon") it.sides = st.sides || 6;
     if (st.shape === "section") it.text = "A";
     if (st.shape === "level") it.text = "+0.00";
+    it.ls = defaultFont(gg) * (st.shape === "section" || st.shape === "level" ? 1.15 : 1);
     return it;
   }
 
@@ -1162,13 +1216,13 @@ export class Markup {
       if (it.kind === "comment" || ((it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) === false)) { out.push(it); continue; }
       let hit = false;
       if (it.kind === "ink") hit = distToPolyline(bx, by, it.pts) <= r + it.w / 2;
-      else if (it.kind === "shape" && (it.shape === "arrow" || it.shape === "curved" || it.shape === "line")) hit = distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= r + it.w;
+      else if (it.kind === "shape" && POINT_SHAPES.has(it.shape)) hit = distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= r + it.w;
       else if (isBlock(it)) {
         const [lx, ly] = apply(inv(blockMatrix(it)), bx, by);
         const t = r / it.k;
         hit = lx >= -t && lx <= it.bw + t && ly >= -t && ly <= it.bd + t;
       } else {
-        const b = itemBounds(it, unit);
+        const b = itemBounds(it, unit, this.viewer.geom(vit).pt);
         hit = bx >= b.x0 - r && bx <= b.x1 + r && by >= b.y0 - r && by <= b.y1 + r;
       }
       if (!hit) { out.push(it); continue; }
@@ -1228,8 +1282,30 @@ export class Markup {
       item.pts[2 * i + 1] = o.pts[2 * i + 1] + dy;
       const b = bbox(item.pts);
       item.x1 = b.x0; item.y1 = b.y0; item.x2 = b.x1; item.y2 = b.y1;
-    } else if (g.mode === "p1") { item.x1 = o.x1 + dx; item.y1 = o.y1 + dy; }
-    else if (g.mode === "p2") { item.x2 = o.x2 + dx; item.y2 = o.y2 + dy; }
+    } else if (g.mode === "p1" || g.mode === "p2") {
+      if (g.mode === "p1") { item.x1 = o.x1 + dx; item.y1 = o.y1 + dy; } else { item.x2 = o.x2 + dx; item.y2 = o.y2 + dy; }
+      if (item.shape === "curved") { const [qx, qy] = curveControl(o); item.qx = qx + dx / 2; item.qy = qy + dy / 2; }
+    } else if (g.mode === "rot" && item.kind === "shape") {
+      const f = shapeFrame(o);
+      let a = (Math.atan2(by - f.cy, bx - f.cx) * 180) / Math.PI + 90;
+      a = ((a % 360) + 360) % 360;
+      const q90 = Math.round(a / 90) * 90, q15 = Math.round(a / 15) * 15;
+      if (Math.abs(a - q90) < 6) a = q90 % 360;
+      else if (Math.abs(a - q15) < 3) a = q15 % 360;
+      item.rot = a;
+    } else if (g.mode[0] === "c" && item.kind === "shape") {
+      // a corner of a box shape, in the shape's own (turned) frame; the opposite corner stays put
+      const f = shapeFrame(o);
+      const c = Math.cos(f.a), s = Math.sin(f.a);
+      const lx = c * (bx - f.cx) + s * (by - f.cy), ly = -s * (bx - f.cx) + c * (by - f.cy);
+      let x0 = -f.w / 2, y0 = -f.h / 2, x1 = f.w / 2, y1 = f.h / 2;
+      if (g.mode[1] === "0") x0 = lx; else x1 = lx;
+      if (g.mode[2] === "0") y0 = ly; else y1 = ly;
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      const w = Math.abs(x1 - x0), hh = Math.abs(y1 - y0);
+      const ncx = f.cx + c * mx - s * my, ncy = f.cy + s * mx + c * my;
+      item.x1 = ncx - w / 2; item.x2 = ncx + w / 2; item.y1 = ncy - hh / 2; item.y2 = ncy + hh / 2;
+    }
     else if (g.mode === "tip") { item.ax = o.ax + dx; item.ay = o.ay + dy; }
     else if (g.mode[0] === "c") {
       const isShape = item.kind === "shape";
@@ -1323,11 +1399,23 @@ export class Markup {
   }
 }
 
+// Sizes the Windows app uses, in points, turned into base units (gg: the page's geometry).
+function sheetUnit(gg) {
+  return Math.max(1, Math.min(4, Math.hypot(gg.dw, gg.dh) / 1032));
+}
+function defaultFont(gg) {
+  return Math.max(7, Math.min(24, 9 * sheetUnit(gg))) * gg.pt;
+}
+function arrowHead(w, gg) {
+  return Math.max(5.5 * sheetUnit(gg) * gg.pt, w * 4);
+}
+
 export function shiftItem(it, dx, dy) {
   if (it.kind === "ink" || (it.kind === "comment" && it.ctype === "free")) {
     for (let i = 0; i < it.pts.length; i += 2) { it.pts[i] += dx; it.pts[i + 1] += dy; }
   } else if (it.kind === "shape") {
     it.x1 += dx; it.y1 += dy; it.x2 += dx; it.y2 += dy;
+    if (it.qx != null) { it.qx += dx; it.qy += dy; }
     if (it.pts) for (let i = 0; i < it.pts.length; i += 2) { it.pts[i] += dx; it.pts[i + 1] += dy; }
   } else if (it.kind === "blur" || (it.kind === "comment" && it.ctype === "box")) {
     it.x0 += dx; it.y0 += dy; it.x1 += dx; it.y1 += dy;

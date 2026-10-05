@@ -72,7 +72,8 @@ const OPS = {
         const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, bb, false);
         pix.clear(255);
         const dev = new mupdf.DrawDevice(mupdf.Matrix.identity, pix);
-        page.run(dev, mupdf.Matrix.scale(s, s));
+        // the page itself, not its annotations: drawings and comments stay on top, unblurred
+        page.runPageContents(dev, mupdf.Matrix.scale(s, s));
         dev.close();
         dev.destroy();
         const png = await blurPixmap(pix);

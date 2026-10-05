@@ -243,8 +243,10 @@ export class Doc {
   get hasImages() {
     return this.pages.some((p) => this.src(p).kind === "image");
   }
+  // PDFs with layers of their own (drawing layers are listed with yours, not here)
   get layerSources() {
-    return [...this.sources.values()].filter((s) => s.kind === "pdf" && s.oc && this.pages.some((p) => p.src === s.id));
+    return [...this.sources.values()].filter((s) => s.kind === "pdf" && s.oc && this.pages.some((p) => p.src === s.id) &&
+      [...s.oc].some(([id]) => !(s.sketch && s.sketch.has(id))));
   }
   get hasMarks() {
     return this.pages.some((p) => p.items.some((it) => it.kind !== "comment"));

@@ -57,9 +57,11 @@ export function pageGeom(doc, p) {
     const place = imagePlacement(ps, rw, rh);
     const k = place.w / rw;
     const b2d = mul(T(place.x, place.y), mul(S(k), toContent));
-    return { W, H, R, crop: c, dw: ps.w, dh: ps.h, b2d, unit: Math.min(W, H), place, k };
+    return { W, H, R, crop: c, dw: ps.w, dh: ps.h, b2d, unit: Math.min(W, H), place, k, pt: 1 / k };
   }
-  return { W, H, R, crop: c, dw: rw, dh: rh, b2d: toContent, unit: Math.min(W, H), place: null, k: 1 };
+  // pt: base units in one PDF point (pages with a UserUnit are measured in bigger units)
+  const uu = s.kind === "pdf" ? (s.pages[p.index].userUnit || 1) : 1;
+  return { W, H, R, crop: c, dw: rw, dh: rh, b2d: toContent, unit: Math.min(W, H), place: null, k: 1, pt: uu };
 }
 
 export function bbox(pts) {
