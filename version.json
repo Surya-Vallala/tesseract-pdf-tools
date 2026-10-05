@@ -1,15 +1,16 @@
 {
-  "version": "1.5.0",
-  "file": "TesseractPDFTools-Setup-1.5.0.exe",
-  "size_mb": 29.8,
-  "sha256": "444f9c9efe59deac51c1faa10e6a5c60af3e90da1cace20ca83d376793aa8aab",
-  "date": "2026-10-04",
+  "version": "1.6.0",
+  "file": "TesseractPDFTools-Setup-1.6.0.exe",
+  "size_mb": 30.0,
+  "sha256": "e7e22a799b532921df4ef8ddba5bca728ec861fa0c92079967b081b9d7e0523d",
+  "date": "2026-10-05",
   "notes": [
-    "Draw on pages: pen, marker, highlighter, eraser and a blur that hides things for good (Draw, D)",
-    "Smooth, Straighten and straight-line drawing; thickness in proportion to the sheet",
-    "Shapes: arrows, curved arrow, rectangles, circles, polygons, stars, north arrow, section and level markers - with text inside",
-    "Tables that calculate like Excel: =SUM, Σ, fill down, Indian commas and ₹, paste from Excel",
-    "Drawing layers to compare design options, and Save Copy with Visible Layers",
-    "Full screen (F11), and toolbar labels that give way on smaller screens"
+    "Blocks (A): beds, sofas, dining sets, kitchen, bathroom, doors, stairs and more, drawn to the sheet's scale - the scale is read from the title block, picked, or measured",
+    "Turn, flip, resize and stretch blocks; sizes in mm or feet-inches",
+    "Hold the pen still at the end of a stroke to make it a clean line, arrow, box, circle or polygon (replaces Straighten)",
+    "The pen's side button or eraser end rubs out",
+    "Split into Files: by page ranges, every N pages, or back into the files it was combined from",
+    "Move pages to the start or end, Reduce File Size presets with sizes, and a search box for files with many layers",
+    "Drawings made here can be edited in the phone app, and the other way round"
   ]
 }
