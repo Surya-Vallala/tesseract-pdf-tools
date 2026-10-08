@@ -1,5 +1,5 @@
 // The Tools tab: password, watermark, reduce size, split, recognise text, save text, save images.
-import { h, esc, icon, openSheet, segmented, toast, busy, confirmDialog } from "./ui.js";
+import { h, esc, icon, openSheet, segmented, toast, busy, confirmDialog, openMenu } from "./ui.js";
 import { pickFiles } from "./platform.js";
 import { engine, preloadEngine } from "./engine.js";
 import { buildPdf, exportPdf, openResultSheet, formatSize } from "./save.js";
@@ -9,7 +9,6 @@ import { drawPage } from "./render.js";
 import { wmSVG } from "./watermark.js";
 import { LANGS, langReady, downloadLang, recognize, documentText } from "./ocr.js";
 
-const LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><g fill="#FA0101"><rect x="28" y="43" width="96" height="25"/><rect x="99" y="68" width="25" height="141"/><rect x="136" y="43" width="70" height="25"/><rect x="136" y="68" width="25" height="141"/><polygon points="210,44 210,68 234,68"/></g></svg>';
 
 const TOOLS = [
   { id: "password", icon: "lock", title: "Password", text: "Add, change or remove a password" },
@@ -116,17 +115,16 @@ function passwordForm(ctx) {
 
 /* ---------- Watermark ---------- */
 
-async function logoImage() {
-  const blob = new Blob([LOGO_SVG], { type: "image/svg+xml" });
-  const url = URL.createObjectURL(blob);
-  const img = new Image();
-  img.src = url;
-  await img.decode();
-  const c = new OffscreenCanvas(1024, 1024);
-  c.getContext("2d").drawImage(img, 0, 0, 1024, 1024);
-  URL.revokeObjectURL(url);
-  const png = await c.convertToBlob({ type: "image/png" });
-  return { bytes: new Uint8Array(await png.arrayBuffer()), mime: "image/png", w: 1024, h: 1024, url: URL.createObjectURL(png), name: "Tesseract logo" };
+// The Tesseract Design | Build logo: black for light pages, white for dark ones.
+const LOGO_NAMES = { black: "Tesseract logo", white: "Tesseract logo, white" };
+async function logoImage(variant = "black") {
+  const res = await fetch(new URL(`../icons/tesseract-logo-${variant}.png`, import.meta.url));
+  if (!res.ok) throw new Error("logo");
+  const blob = await res.blob();
+  const bmp = await createImageBitmap(blob);
+  const out = { bytes: new Uint8Array(await blob.arrayBuffer()), mime: "image/png", w: bmp.width, h: bmp.height, url: URL.createObjectURL(blob), name: LOGO_NAMES[variant] || LOGO_NAMES.black, dark: variant === "white" };
+  bmp.close();
+  return out;
 }
 
 async function pictureImage(file) {
@@ -228,9 +226,19 @@ function openWatermark(ctx) {
       inp.addEventListener("input", () => { spec.text = inp.value; paint(); });
       srcBox.appendChild(inp);
     } else {
-      const row = h(`<div class="wm-img-row">${spec.image ? `<img alt="" src="${spec.image.url}"><span class="ell">${esc(spec.image.name || "Picture")}</span>` : `<span class="note" style="margin:0">Choose what to show:</span>`}
+      const im = spec.image;
+      const cls = im ? [im.w / im.h > 1.6 ? "wide" : "", im.dark ? "dark" : ""].join(" ").trim() : "";
+      const row = h(`<div class="wm-img-row">${im ? `<img alt="" src="${im.url}" class="${cls}"><span class="ell">${esc(im.name || "Picture")}</span>` : `<span class="note" style="margin:0">Choose what to show:</span>`}
         <button type="button" class="btn small" data-logo>Tesseract logo</button><button type="button" class="btn small" data-pic>Choose a picture</button></div>`);
-      row.querySelector("[data-logo]").addEventListener("click", async () => { spec.image = await logoImage(); renderSrc(); paint(); });
+      row.querySelector("[data-logo]").addEventListener("click", async (e) => {
+        const v = await openMenu(e.currentTarget, [
+          { label: "Black logo", value: "black" },
+          { label: "White logo, for dark pages", value: "white" }
+        ], { align: "start" });
+        if (!v) return;
+        try { spec.image = await logoImage(v); } catch (err) { toast("The logo couldn't be loaded. Try again."); return; }
+        renderSrc(); paint();
+      });
       row.querySelector("[data-pic]").addEventListener("click", async () => {
         const [f] = await pickFiles({ accept: "image/*" });
         if (!f) return;

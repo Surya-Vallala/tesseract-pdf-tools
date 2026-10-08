@@ -101,6 +101,8 @@ button { font: inherit; color: inherit; }
 .home-logo { width: 64px; height: 64px; flex: none; }
 .home-head h1 { font-size: 24px; line-height: 1.15; margin: 0; font-weight: 650; letter-spacing: -.01em; }
 .home-sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.home-brand { display: block; margin-top: 8px; }
+.home-brand img { display: block; width: 200px; height: auto; }
 
 .home-actions { display: grid; gap: 12px; }
 .action {
@@ -482,6 +484,8 @@ button { font: inherit; color: inherit; }
 .wm-row .op-val { width: 40px; text-align: right; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
 .wm-img-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 46px; }
 .wm-img-row img { width: 40px; height: 40px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.wm-img-row img.wide { width: 112px; padding: 4px 6px; box-sizing: border-box; }
+.wm-img-row img.dark { background: #1c1c1a; border-color: #1c1c1a; }
 .seg.small button { min-height: 34px; padding: 4px 10px; font-size: 13px; flex: none; }
 .sheet.full { height: calc(100% - 64px - var(--safe-t)); }
 .vpage .spin { position: absolute; left: 50%; top: 50%; margin: -12px 0 0 -12px; }

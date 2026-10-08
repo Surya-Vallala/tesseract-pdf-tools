@@ -13,7 +13,7 @@ import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./
 import { pickFiles, onIncomingFiles } from "./platform.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
 
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.6.1";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
