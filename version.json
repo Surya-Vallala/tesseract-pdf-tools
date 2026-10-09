@@ -1,16 +1,16 @@
 {
-  "version": "1.6.1",
-  "file": "TesseractPDFTools-Setup-1.6.1.exe",
-  "size_mb": 30.0,
-  "sha256": "5d8bfbed9e895557f631efb52eebd42ed33ac653de00636a6b728b70310b7a74",
-  "date": "2026-10-06",
+  "version": "1.6.2",
+  "file": "TesseractPDFTools-Setup-1.6.2.exe",
+  "size_mb": 30.3,
+  "sha256": "4e58c8e1b2329088fdd25ae6131b22231e314677ccc3112320c16fbe2bee67ea",
+  "date": "2026-10-09",
   "notes": [
-    "Blocks saved to My blocks on the phone now show here too, and can be moved, turned and resized",
-    "The drawing scale box: the scale found on the sheet is clearly marked, and Enter uses it",
-    "Fit Width no longer shows a stray sideways scroll bar",
+    "The new TESSERACT logo on the start screen, in About and in the installer",
+    "From 1.6.1: Blocks saved to My blocks on the phone now show here too, and can be moved, turned and resized",
+    "From 1.6.1: The drawing scale box: the scale found on the sheet is clearly marked, and Enter uses it",
+    "From 1.6.1: Fit Width no longer shows a stray sideways scroll bar",
     "From 1.6: Blocks (A) drawn to the sheet's scale, from beds and sofas to doors, stairs and cars",
     "From 1.6: hold the pen still at the end of a stroke to make a clean line, box, circle or polygon; the pen's eraser end rubs out",
-    "From 1.6: Split into Files, move pages to the start or end, Reduce File Size presets",
-    "From 1.6: drawings made here can be edited in the phone app, and the other way round"
+    "From 1.6: Split into Files, move pages to the start or end, Reduce File Size presets"
   ]
 }
