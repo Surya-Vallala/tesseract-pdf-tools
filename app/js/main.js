@@ -11,9 +11,9 @@ import { openTools } from "./tools.js";
 import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
 import { pickFiles, onIncomingFiles } from "./platform.js";
-import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu } from "./ui.js";
+import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h } from "./ui.js";
 
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.6.2";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -506,6 +506,29 @@ window.addEventListener("beforeinstallprompt", (e) => {
   $("btnInstall").hidden = false;
   $("installManual").hidden = true;
 });
+/* ---------- about: developed by Tesseract Studio ---------- */
+
+const SUPPORT_EMAIL = "tools@tesseractstudio.co";
+$("btnAbout").addEventListener("click", () => {
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const subject = encodeURIComponent(`Tesseract PDF Tools (phone) ${APP_VERSION}`);
+  const body = h(`<div>
+    <section class="about-card">
+      <p class="lbl">Developed by</p>
+      <img class="logo" src="icons/tesseract-logo-${dark ? "white" : "black"}.png" alt="Tesseract Design | Build">
+      <p class="muted" style="font-size:15px">Tesseract Studio, Hyderabad</p>
+    </section>
+    <section class="about-card">
+      <p class="lbl">Suggestions and questions</p>
+      <p>Have an idea, found something wrong, or want to ask about the app? Write to us.</p>
+      <a class="mail" href="mailto:${SUPPORT_EMAIL}?subject=${subject}">${SUPPORT_EMAIL}</a>
+      <a class="btn primary" href="mailto:${SUPPORT_EMAIL}?subject=${subject}">Email Tesseract Studio</a>
+    </section>
+    <p class="muted" style="text-align:center">Tesseract PDF Tools ${APP_VERSION}</p>
+  </div>`);
+  openSheet({ title: "About", body });
+});
+
 $("btnInstall").addEventListener("click", async () => {
   if (!installEvent) return;
   installEvent.prompt();
