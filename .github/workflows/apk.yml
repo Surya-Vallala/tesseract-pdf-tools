@@ -1,0 +1,90 @@
+# Builds the Android app (APK) of the phone web app on every phone-app change.
+# The APK is built unsigned here and signed separately, so the signing key never sits in this public repo.
+# Results (APK, build log, emulator test screenshots and report) go to the apk-build branch.
+name: Android app (APK)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "apk/**"
+      - ".github/workflows/apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apk/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install and copy the web app in
+        working-directory: apk
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: |
+          npm ci --no-audit --no-fund
+          npm run sync
+
+      - name: Build the APK
+        working-directory: apk/android
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: Enable the emulator's hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test on an Android emulator
+        continue-on-error: true
+        timeout-minutes: 25
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: |
+            adb install -r apk/android/app/build/outputs/apk/debug/app-debug.apk
+            node apk/test/emulator-test.mjs test-out
+
+      - name: Publish to the apk-build branch
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/pub && cd /tmp/pub
+          cp "$GITHUB_WORKSPACE/apk/android/app/build/outputs/apk/release/app-release-unsigned.apk" . 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/apk/android/build.log" . 2>/dev/null || true
+          cp -r "$GITHUB_WORKSPACE/test-out" . 2>/dev/null || true
+          printf 'commit %s\nrun %s\nbuilt %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$(date -u +%FT%TZ)" > BUILD.txt
+          git init -q -b apk-build
+          git add -A
+          git -c user.name="APK build" -c user.email="actions@users.noreply.github.com" commit -qm "APK build for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-build

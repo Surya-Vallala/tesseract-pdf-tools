@@ -1,0 +1,15 @@
+{
+  "appId": "co.tesseractstudio.pdftools",
+  "appName": "Tesseract PDF",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": false,
+    "backgroundColor": "#00000000"
+  },
+  "plugins": {
+    "SystemBars": {
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

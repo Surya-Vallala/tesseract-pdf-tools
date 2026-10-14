@@ -10,10 +10,10 @@ import { askAuthor, openBubble, openCommentsList, editComment } from "./comments
 import { openTools } from "./tools.js";
 import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
-import { pickFiles, onIncomingFiles } from "./platform.js";
+import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h } from "./ui.js";
 
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.7.0";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -492,11 +492,12 @@ onIncomingFiles((files, info) => {
   if (info && info.error) { toast("The shared file couldn't be read. Try again."); return; }
   if (!files.length) { if (info && info.shared) toast("Nothing arrived. Try sharing the file again."); return; }
   openFiles(files, { combine: files.length > 1 });
+  if (info && info.partial) toast("Some of the shared files couldn't be read.");
 });
 
 /* ---------- install and updates ---------- */
 
-const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const standalone = isAndroidApp || matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 $("shareTip").hidden = !standalone;
 $("installCard").hidden = standalone;
 let installEvent = null;
@@ -511,7 +512,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 const SUPPORT_EMAIL = "tools@tesseractstudio.co";
 $("btnAbout").addEventListener("click", () => {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-  const subject = encodeURIComponent(`Tesseract PDF Tools (phone) ${APP_VERSION}`);
+  const subject = encodeURIComponent(`Tesseract PDF Tools (${isAndroidApp ? "Android app" : "phone"}) ${APP_VERSION}`);
   const body = h(`<div>
     <section class="about-card">
       <p class="lbl">Developed by</p>
@@ -524,7 +525,7 @@ $("btnAbout").addEventListener("click", () => {
       <a class="mail" href="mailto:${SUPPORT_EMAIL}?subject=${subject}">${SUPPORT_EMAIL}</a>
       <a class="btn primary" href="mailto:${SUPPORT_EMAIL}?subject=${subject}">Email Tesseract Studio</a>
     </section>
-    <p class="muted" style="text-align:center">Tesseract PDF Tools ${APP_VERSION}</p>
+    <p class="muted" style="text-align:center">Tesseract PDF Tools ${APP_VERSION}${isAndroidApp ? " for Android" : ""}</p>
   </div>`);
   openSheet({ title: "About", body });
 });
@@ -541,7 +542,8 @@ window.addEventListener("appinstalled", () => {
   toast("Installed. Open Tesseract PDF from your home screen.");
 });
 
-if ("serviceWorker" in navigator) {
+// The Android app carries all its files inside it, so it has no use for the offline cache.
+if ("serviceWorker" in navigator && !isAndroidApp) {
   let updateAsked = false;
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const offer = (w) => {

@@ -1014,10 +1014,18 @@ export function openSaveSheet(doc, { pages = null, onSaved } = {}) {
       return;
     }
     if (btn.dataset.go === "download") {
-      downloadFile(file);
+      let savedName;
+      try {
+        savedName = await downloadFile(file);
+      } catch (err) {
+        if (err && err.code === "CANCELLED") return;
+        console.error(err);
+        toast(share ? "The PDF couldn't be saved. Try again, or use Share." : "The PDF couldn't be saved. Try again.", { ms: 6000 });
+        return;
+      }
       if (!extract) doc.dirty = false;
       sheet.close();
-      toast(`Saved to Downloads as ${file.name}`);
+      toast(`Saved to Downloads as ${savedName || file.name}`);
       onSaved && onSaved();
       return;
     }
@@ -1055,7 +1063,14 @@ export function openResultSheet(title, files, message) {
     const btn = e.target.closest("[data-go]");
     if (!btn) return;
     if (btn.dataset.go === "download") {
-      await downloadFiles(files);
+      try {
+        await downloadFiles(files);
+      } catch (err) {
+        if (err && err.code === "CANCELLED") return;
+        console.error(err);
+        toast("The files couldn't be saved. Try again.", { ms: 6000 });
+        return;
+      }
       sheet.close();
       toast(many ? `Saved ${files.length} files to Downloads` : `Saved to Downloads as ${files[0].name}`);
       return;

@@ -1,5 +1,9 @@
-// Everything that moves files in and out of the app lives here, so the Android (APK)
-// version only needs to swap this one module for its native versions.
+// Everything that moves files in and out of the app lives here. Inside the Android app (APK)
+// these hand over to native.js; in Chrome they use the browser's own features.
+
+import * as native from "./native.js";
+
+export const isAndroidApp = native.isNative;
 
 export function pickFiles({ multiple = false, accept = "application/pdf,.pdf,image/*" } = {}) {
   return new Promise((resolve) => {
@@ -23,6 +27,7 @@ export function pickFiles({ multiple = false, accept = "application/pdf,.pdf,ima
 }
 
 export function canShareFiles(files) {
+  if (native.isNative) return true;
   try {
     const probe = files || [new File([new Uint8Array(1)], "x.pdf", { type: "application/pdf" })];
     return !!(navigator.canShare && navigator.canShare({ files: probe }));
@@ -33,6 +38,7 @@ export function canShareFiles(files) {
 
 /** Opens the phone's share menu. Returns "shared", "cancelled" or "needs-tap". */
 export async function shareFiles(files, title) {
+  if (native.isNative) return native.shareFiles(files, title);
   try {
     await navigator.share({ files, title: title || files[0].name });
     return "shared";
@@ -43,7 +49,9 @@ export async function shareFiles(files, title) {
   }
 }
 
-export function downloadFile(file) {
+/** Saves to Downloads. Returns the name it was saved under. */
+export async function downloadFile(file) {
+  if (native.isNative) return native.saveFile(file);
   const url = URL.createObjectURL(file);
   const a = document.createElement("a");
   a.href = url;
@@ -52,17 +60,26 @@ export function downloadFile(file) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return file.name;
 }
 
 export async function downloadFiles(files) {
+  if (native.isNative) {
+    for (const f of files) await native.saveFile(f);
+    return;
+  }
   for (const f of files) {
     downloadFile(f);
     await new Promise((r) => setTimeout(r, 450));
   }
 }
 
-/** Files arriving from other apps: the Share menu (via the service worker) and "Open with" on computers. */
+/** Files arriving from other apps: the Share menu (via the service worker, or the APK) and "Open with". */
 export function onIncomingFiles(handler) {
+  if (native.isNative) {
+    native.onIncoming(handler);
+    return;
+  }
   const params = new URLSearchParams(location.search);
   if (params.has("share")) {
     history.replaceState({ depth: 0 }, "", location.pathname);

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The red TT mark of Tesseract PDF Tools (same shapes as app/icons/icon.svg). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.23301"
+        android:scaleY="0.23301"
+        android:translateX="23.4757"
+        android:translateY="24.6408">
+        <path
+            android:fillColor="#FA0101"
+            android:pathData="M28,43h96v25h-96z M99,68h25v141h-25z M136,43h70v25h-70z M136,68h25v141h-25z M210,44L210,68L234,68z" />
+    </group>
+</vector>
