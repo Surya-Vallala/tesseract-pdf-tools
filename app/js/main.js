@@ -507,6 +507,15 @@ window.addEventListener("beforeinstallprompt", (e) => {
   $("btnInstall").hidden = false;
   $("installManual").hidden = true;
 });
+// The PDF engine needs a recent Chrome (or, in the Android app, Android System WebView).
+if (typeof Promise.withResolvers !== "function") {
+  const n = $("oldEngine");
+  n.innerHTML = isAndroidApp
+    ? "This phone's <b>Android System WebView</b> is out of date, so PDFs won't open. Update it in the Play Store, then open the app again."
+    : "This version of <b>Chrome</b> is out of date, so PDFs won't open. Update Chrome in the Play Store, then open the app again.";
+  n.hidden = false;
+}
+
 /* ---------- about: developed by Tesseract Studio ---------- */
 
 const SUPPORT_EMAIL = "tools@tesseractstudio.co";

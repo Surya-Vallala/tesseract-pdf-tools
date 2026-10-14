@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let device;
 try {
   [device] = await android.devices();
-  adb(`shell am start -W -n ${PKG}/.MainActivity`);
+  adb(`shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n ${PKG}/.MainActivity`);
   const webview = await device.webView({ pkg: PKG }, { timeout: 90000 });
   const page = await webview.page();
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") report.console = [...(report.console || []), `[${m.type()}] ${m.text()}`]; });
@@ -42,6 +42,7 @@ try {
     shareTipShown: !document.getElementById("shareTip").hidden,
     version: document.getElementById("appVersion").textContent,
     serviceWorker: !!(navigator.serviceWorker && navigator.serviceWorker.controller),
+    oldEngineNotice: !document.getElementById("oldEngine").hidden,
     dark: matchMedia("(prefers-color-scheme: dark)").matches,
     ua: navigator.userAgent
   }));
@@ -130,6 +131,19 @@ try {
 } catch (e) {
   step("Test run", false, String(e && e.stack || e));
   try { await device.screenshot({ path: `${OUT}/error.png` }); } catch (_) { /* ignore */ }
+}
+
+// Dark mode: start fresh with the phone in dark mode and take a picture.
+try {
+  adb(`shell am force-stop ${PKG}`);
+  adb("shell cmd uimode night yes");
+  await sleep(1500);
+  adb(`shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n ${PKG}/.MainActivity`);
+  await sleep(6000);
+  await device.screenshot({ path: `${OUT}/5-home-dark.png` });
+  adb("shell cmd uimode night no");
+} catch (e) {
+  step("Dark mode picture", false, String(e && e.message || e));
 }
 
 writeFileSync(`${OUT}/logcat.txt`, adb("logcat -d -v time Capacitor:V Capacitor/Console:V Tesseract:V chromium:W AndroidRuntime:E *:S"));
