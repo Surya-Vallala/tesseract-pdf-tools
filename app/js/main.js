@@ -11,9 +11,10 @@ import { openTools } from "./tools.js";
 import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
 import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
-import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h } from "./ui.js";
+import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
+import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc } from "./ui.js";
 
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -534,10 +535,76 @@ $("btnAbout").addEventListener("click", () => {
       <a class="mail" href="mailto:${SUPPORT_EMAIL}?subject=${subject}">${SUPPORT_EMAIL}</a>
       <a class="btn primary" href="mailto:${SUPPORT_EMAIL}?subject=${subject}">Email Tesseract Studio</a>
     </section>
+    ${isAndroidApp ? `<section class="about-card">
+      <p class="lbl">Updates</p>
+      <p>You have version ${APP_VERSION}. The app only goes online when you check.</p>
+      <button class="btn" type="button" data-update>Check for updates</button>
+    </section>` : ""}
     <p class="muted" style="text-align:center">Tesseract PDF Tools ${APP_VERSION}${isAndroidApp ? " for Android" : ""}</p>
   </div>`);
-  openSheet({ title: "About", body });
+  const sheet = openSheet({ title: "About", body });
+  const upd = body.querySelector("[data-update]");
+  if (upd) upd.addEventListener("click", () => { sheet.close(); checkForUpdates(); });
 });
+
+/* ---------- Android app: check for updates, asking first every time ---------- */
+
+async function checkForUpdates() {
+  const ok = await confirmDialog({
+    title: "Check for updates?",
+    message: "This connects to the internet to see if there's a newer version of the app. None of your files are sent.",
+    okText: "Check"
+  });
+  if (!ok) return;
+  let info;
+  const b = busy("Checking for updates…");
+  try {
+    info = await fetchUpdateInfo();
+  } catch (e) {
+    console.warn(e);
+    toast("Couldn't check for updates. Check your internet connection and try again.", { ms: 6000 });
+    return;
+  } finally {
+    b.close();
+  }
+  if (!newerThan(info.version, APP_VERSION)) {
+    toast(`You have the latest version (${APP_VERSION}).`);
+    return;
+  }
+  const notes = Array.isArray(info.notes) ? info.notes.slice(0, 8) : [];
+  const body = h(`<div>
+    <p style="margin-top:0">Version ${esc(info.version)} is ready${info.size_mb ? ` (${esc(String(info.size_mb))} MB)` : ""}. You have ${APP_VERSION}.</p>
+    ${notes.length ? `<ul class="save-notes">${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+    <p class="muted" style="font-size:13px">Android will ask you to confirm the update. Your settings and My blocks stay.</p>
+  </div>`);
+  const foot = h(`<div class="foot-row">
+    <button class="btn" type="button" data-later>Later</button>
+    <button class="btn primary" type="button" data-now>Update now</button>
+  </div>`);
+  const sheet = openSheet({ title: "Update available", body, foot });
+  foot.querySelector("[data-later]").addEventListener("click", () => sheet.close());
+  foot.querySelector("[data-now]").addEventListener("click", async () => {
+    if (cur && cur.doc.dirty) {
+      toast("Save or close your file first, then update.", { ms: 5000 });
+      return;
+    }
+    sheet.close();
+    const d = busy("Downloading the update…");
+    try {
+      await installUpdate(info, (p) => {
+        if (p.total > 0) d.set(`Downloading the update… ${Math.min(99, Math.round((p.done / p.total) * 100))}%`);
+      });
+    } catch (e) {
+      console.warn(e);
+      const code = e && e.code;
+      toast(code === "NO_PERMISSION" ? "To update, allow Tesseract PDF to install apps, then tap Update now again."
+        : code === "BAD_FILE" ? "The download was damaged. Try again."
+        : "The update couldn't be downloaded. Check your internet connection and try again.", { ms: 7000 });
+    } finally {
+      d.close();
+    }
+  });
+}
 
 $("btnInstall").addEventListener("click", async () => {
   if (!installEvent) return;

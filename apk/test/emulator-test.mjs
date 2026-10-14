@@ -123,6 +123,43 @@ try {
   const shareResult = await page.evaluate(() => window.__shareResult);
   step("Share opens Android's share menu and closing it is understood", /chooser|resolver|ChooserActivity|intentresolver/i.test(focus) && shareResult === "cancelled", { focus: focus.trim(), shareResult });
 
+  // Check for updates, as the person would: About, Check for updates, Check.
+  await page.click("#btnAbout");
+  await sleep(800);
+  await page.click("[data-update]");
+  await sleep(800);
+  await device.screenshot({ path: `${OUT}/5-update-ask.png` });
+  await page.click('.dialog [data-r="1"]');
+  let updToast = "";
+  for (let i = 0; i < 20 && !/version|update/i.test(updToast); i++) {
+    await sleep(700);
+    updToast = await page.evaluate(() => [...document.querySelectorAll(".toast, .sheet h2")].map((t) => t.textContent).join(" | "));
+  }
+  await device.screenshot({ path: `${OUT}/6-update-result.png` });
+  step("Check for updates asks first, then reads version.json", /latest version|Update available/.test(updToast), updToast);
+  await page.evaluate(() => { document.querySelectorAll(".sheet-head .ib").forEach((b) => b.click()); });
+  await sleep(500);
+
+  // Downloading an update: fetch the published APK, check it, and hand it to Android's installer.
+  adb(`shell appops set ${PKG} REQUEST_INSTALL_PACKAGES allow`);
+  await page.evaluate(() => {
+    window.__upd = "pending";
+    import("./js/native.js")
+      .then(async (m) => { const info = await m.fetchUpdateInfo(); await m.installUpdate(info); return "installer"; })
+      .then((r) => { window.__upd = r; }, (e) => { window.__upd = "error: " + (e && (e.code || e.message)); });
+  });
+  let upd = "pending";
+  for (let i = 0; i < 60 && upd === "pending"; i++) {
+    await sleep(1000);
+    upd = await page.evaluate(() => window.__upd).catch(() => "page gone");
+  }
+  await sleep(2500);
+  await device.screenshot({ path: `${OUT}/7-installer.png` });
+  const instFocus = adb("shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'");
+  step("Update download is checked and Android's installer opens", upd === "installer" && /packageinstaller/i.test(instFocus), { upd, focus: instFocus.trim() });
+  adb("shell input keyevent 4");
+  await sleep(2000);
+
   // Back on the home screen leaves the app (it goes to the background, not crash).
   adb("shell input keyevent 4");
   await sleep(2000);

@@ -11,8 +11,10 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.webkit.MimeTypeMap;
 import androidx.activity.result.ActivityResult;
+import androidx.core.content.FileProvider;
 import androidx.core.content.IntentCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -28,6 +30,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -38,6 +44,7 @@ import java.util.Set;
  * The few things the web app can't do by itself inside an Android app:
  * - receive PDFs and photos from "Open with" and the Share menu ("incoming" event)
  * - save finished files into the phone's Downloads folder (saveToDownloads)
+ * - check for a newer version and install it, only when the person asks (fetchText, installUpdate)
  * Sharing out uses Capacitor's Share plugin; files are written with the Filesystem plugin.
  */
 @CapacitorPlugin(name = "Tesseract")
@@ -47,12 +54,15 @@ public class TesseractPlugin extends Plugin {
     private static final String INCOMING_DIR = "incoming";
     private static final String OUTGOING_DIR = "tpt-out";
     private static final String HANDLED_ACTION = "co.tesseractstudio.pdftools.HANDLED";
+    // Updates only ever come from the app's own GitHub site.
+    private static final String UPDATE_ROOT = "https://surya-vallala.github.io/tesseract-pdf-tools/";
 
     @Override
     public void load() {
         // Files from an earlier session are no longer needed.
         deleteTree(new File(getContext().getCacheDir(), INCOMING_DIR));
         deleteTree(new File(getContext().getCacheDir(), OUTGOING_DIR));
+        deleteTree(new File(getContext().getCacheDir(), "updates"));
     }
 
     /* ---------- files arriving from other apps ---------- */
@@ -244,6 +254,141 @@ public class TesseractPlugin extends Plugin {
             Logger.error(TAG, "Saving failed", e);
             call.reject("The file couldn't be saved.");
         }
+    }
+
+    /* ---------- updates (only when the person taps Check for updates) ---------- */
+
+    @PluginMethod
+    public void fetchText(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url == null || !url.startsWith(UPDATE_ROOT)) {
+            call.reject("Not allowed.");
+            return;
+        }
+        HttpURLConnection c = null;
+        try {
+            c = open(url);
+            int code = c.getResponseCode();
+            if (code != 200) throw new IOException("HTTP " + code);
+            byte[] buf = new byte[8192];
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (InputStream in = c.getInputStream()) {
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    if (out.size() > 262144) throw new IOException("Too large");
+                }
+            }
+            JSObject r = new JSObject();
+            r.put("text", new String(out.toByteArray(), StandardCharsets.UTF_8));
+            call.resolve(r);
+        } catch (Exception e) {
+            Logger.error(TAG, "Update check failed", e);
+            call.reject("Couldn't reach the update server.", "OFFLINE");
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        String url = call.getString("url", "");
+        String sha = call.getString("sha256", "");
+        if (url == null || !url.startsWith(UPDATE_ROOT) || sha == null || !sha.matches("[0-9a-fA-F]{64}")) {
+            call.reject("Not allowed.");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getContext().getPackageManager().canRequestPackageInstalls()) {
+            // Android asks once: allow Tesseract PDF to install its own updates.
+            Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getContext().getPackageName()));
+            startActivityForResult(call, i, "installPermissionResult");
+            return;
+        }
+        new Thread(() -> downloadAndInstall(call), "tpt-update").start();
+    }
+
+    @ActivityCallback
+    private void installPermissionResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getContext().getPackageManager().canRequestPackageInstalls()) {
+            call.reject("Permission to install updates wasn't given.", "NO_PERMISSION");
+            return;
+        }
+        new Thread(() -> downloadAndInstall(call), "tpt-update").start();
+    }
+
+    private void downloadAndInstall(PluginCall call) {
+        String url = call.getString("url");
+        String expected = call.getString("sha256", "").toLowerCase(Locale.ROOT);
+        File dir = new File(getContext().getCacheDir(), "updates");
+        deleteTree(dir);
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        File apk = new File(dir, "update.apk");
+        HttpURLConnection c = null;
+        try {
+            c = open(url);
+            int code = c.getResponseCode();
+            if (code != 200) throw new IOException("HTTP " + code);
+            long total = c.getContentLengthLong();
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            long done = 0;
+            long lastReport = 0;
+            try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(apk)) {
+                byte[] buf = new byte[1 << 16];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    md.update(buf, 0, n);
+                    done += n;
+                    if (done - lastReport > 262144) {
+                        lastReport = done;
+                        JSObject p = new JSObject();
+                        p.put("done", done);
+                        p.put("total", total);
+                        notifyListeners("updateProgress", p);
+                    }
+                }
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte b : md.digest()) hex.append(String.format(Locale.ROOT, "%02x", b));
+            if (!hex.toString().equals(expected)) {
+                deleteTree(dir);
+                call.reject("The download was damaged.", "BAD_FILE");
+                return;
+            }
+        } catch (Exception e) {
+            Logger.error(TAG, "Update download failed", e);
+            deleteTree(dir);
+            call.reject("The update couldn't be downloaded.", "OFFLINE");
+            return;
+        } finally {
+            if (c != null) c.disconnect();
+        }
+
+        Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", apk);
+        Intent install = new Intent(Intent.ACTION_VIEW);
+        install.setDataAndType(uri, "application/vnd.android.package-archive");
+        install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        getBridge().executeOnMainThread(() -> {
+            try {
+                getActivity().startActivity(install);
+                call.resolve();
+            } catch (Exception e) {
+                Logger.error(TAG, "Couldn't open the installer", e);
+                call.reject("Android's installer didn't open.");
+            }
+        });
+    }
+
+    private static HttpURLConnection open(String url) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        c.setUseCaches(false);
+        c.setInstanceFollowRedirects(true);
+        c.setRequestProperty("Cache-Control", "no-cache");
+        return c;
     }
 
     /* ---------- helpers ---------- */

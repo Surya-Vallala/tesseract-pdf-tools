@@ -63,8 +63,10 @@
         </provider>
     </application>
 
-    <!-- The app works offline; files never leave the phone. -->
+    <!-- Only used when you tap Check for updates; your files never leave the phone. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the app hand a downloaded update to Android's installer (Android asks you first). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- The small buzz when you pick up a page or a shape -->
     <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

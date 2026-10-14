@@ -96,3 +96,34 @@ export function onIncoming(handler) {
     }
   });
 }
+
+/* ---------- updates: only when the person taps Check for updates ---------- */
+
+const UPDATE_INFO = "https://surya-vallala.github.io/tesseract-pdf-tools/android/version.json";
+
+export function newerThan(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
+/** Reads android/version.json from the app's GitHub site. */
+export async function fetchUpdateInfo() {
+  const r = await call("Tesseract", "fetchText", { url: `${UPDATE_INFO}?t=${Date.now()}` });
+  const info = JSON.parse(r.text);
+  if (!info || !info.version || !info.url || !info.sha256) throw new Error("Bad update info");
+  return info;
+}
+
+/** Downloads the new APK, checks it, and opens Android's installer. */
+export async function installUpdate(info, onProgress) {
+  const listener = cap.addListener("Tesseract", "updateProgress", (p) => { if (p && onProgress) onProgress(p); });
+  try {
+    await call("Tesseract", "installUpdate", { url: info.url, sha256: info.sha256 });
+  } finally {
+    listener.remove();
+  }
+}
