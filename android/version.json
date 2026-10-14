@@ -1,13 +1,13 @@
 {
-  "version": "1.7.1",
-  "versionCode": 10701,
-  "file": "TesseractPDF-1.7.1.apk",
-  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.7.1.apk",
+  "version": "1.7.2",
+  "versionCode": 10702,
+  "file": "TesseractPDF-1.7.2.apk",
+  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.7.2.apk",
   "size_mb": 20.3,
-  "sha256": "32a033f867756b0ed5679e23b74ae4dbd3384b04b6a6a313a66bb2853b892c78",
+  "sha256": "3a6db5daf60739eb470b5bfd4d12af331539921029814bb994cb30577f06412b",
   "date": "2026-10-14",
   "notes": [
-    "Check for updates in About: asks before going online, then updates the app in a few taps",
-    "From 1.7.0: works offline, opens PDFs from Open with and the Share menu, saves to Downloads"
+    "\"Developed by\" on the home screen now looks like a button you can tap",
+    "From 1.7.1: Check for updates in About"
   ]
 }
