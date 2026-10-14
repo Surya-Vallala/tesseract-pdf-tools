@@ -12,9 +12,10 @@ import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
 import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
 import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
-import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc } from "./ui.js";
+import { scanPages } from "./scan.js";
+import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon } from "./ui.js";
 
-const APP_VERSION = "1.7.2";
+const APP_VERSION = "1.8.0";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -26,8 +27,14 @@ initHistory();
 try { localStorage.removeItem("tpt-ai-key"); } catch (e) { /* private mode */ }
 $("appVersion").textContent = APP_VERSION;
 
-let cur = null; // { doc, tab, layer }
+// Open files, one tab each. cur is the one on screen: { doc, tab, view }.
+const MAX_TABS = 6;
+const tabs = [];
+let cur = null;
 let pendingReload = false;
+// One Back step per open file. The steps are interchangeable: Back always closes the file on screen.
+const docLayers = [];
+let closingTab = null;
 
 const viewer = new Viewer($("viewer"), $("vwrap"), $("pageBadge"), {
   onTap: () => { if (cur && cur.tab === "view") docScreen.classList.toggle("immersive"); },
@@ -69,14 +76,34 @@ function marksChanged() {
 
 /* ---------- opening files ---------- */
 
-$("btnOpen").addEventListener("click", async () => {
-  const files = await pickFiles({ multiple: false });
+$("btnOpen").addEventListener("click", () => openPicked());
+async function openPicked() {
+  const files = await pickFiles({ multiple: true });
   if (files.length) openFiles(files, { combine: false });
-});
+}
 $("btnCombine").addEventListener("click", async () => {
   const files = await pickFiles({ multiple: true });
   if (files.length) openFiles(files, { combine: true });
 });
+$("btnScan").addEventListener("click", () => scanToNewTab());
+
+// "Scan 15-10-2026 09.42"
+function scanName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `Scan ${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}.${p(d.getMinutes())}`;
+}
+
+async function scanToNewTab() {
+  if (tabs.length >= MAX_TABS) {
+    toast(`Up to ${MAX_TABS} files can be open at once. Close one, then scan.`, { ms: 5000 });
+    return;
+  }
+  const files = await scanPages();
+  if (!files.length) return;
+  // A new scan isn't saved anywhere yet, so closing it asks first.
+  openFiles(files, { combine: true, name: scanName(), tab: files.length > 1 ? "pages" : "view", unsaved: true });
+}
 
 async function loadAll(files, { many }) {
   const loaded = [];
@@ -116,27 +143,54 @@ async function loadAll(files, { many }) {
   return { loaded, problems };
 }
 
-async function openFiles(files, { combine }) {
-  if (cur) {
-    const ok = await leaveDoc();
-    if (!ok) return;
+// A file that's already open (same name and size) just comes to the front.
+function findOpen(file) {
+  return tabs.find((t) => {
+    const srcs = [...t.doc.sources.values()];
+    if (srcs.length !== 1) return false;
+    const s = srcs[0];
+    const size = s.blob ? s.blob.size : s.fileSize;
+    return s.name === file.name && size === file.size;
+  });
+}
+
+async function openFiles(files, { combine = false, name = null, tab = null, unsaved = false } = {}) {
+  // Several files from "Open a PDF" open side by side, one tab each.
+  if (!combine && files.length > 1) {
+    for (const f of files) {
+      if (!(await openFiles([f], { combine: false }))) break;
+    }
+    return true;
+  }
+  if (!combine) {
+    const open = findOpen(files[0]);
+    if (open) {
+      activateTab(open);
+      toast(`“${open.doc.name}.pdf” is already open`);
+      return true;
+    }
+  }
+  if (tabs.length >= MAX_TABS) {
+    toast(`Up to ${MAX_TABS} files can be open at once. Close one, then try again.`, { ms: 5000 });
+    return false;
   }
   const { loaded, problems } = await loadAll(files, { many: files.length > 1 });
   if (!loaded.length) {
     if (problems.length) confirmDialog({ title: "Couldn't open", message: problems.join("\n"), okText: "OK", cancelText: "" });
-    return;
+    return true;
   }
   const doc = new Doc();
   const added = loaded.map((s) => [s, doc.addSource(s)]);
   await bringDrawings(doc, added);
   doc.history = [];
-  doc.dirty = false;
-  doc.name = loaded.length === 1 ? baseName(loaded[0].name) : "Combined";
+  doc.dirty = unsaved;
+  doc.name = name || (loaded.length === 1 ? baseName(loaded[0].name) : "Combined");
   if (loaded.length === 1 && loaded[0].kind === "pdf" && loaded[0].password) doc.password = loaded[0].password;
-  showDoc(doc, combine || loaded.length > 1 ? "pages" : "view");
+  openTab(doc, tab || (combine || loaded.length > 1 ? "pages" : "view"));
   if (problems.length) toast(problems.join(" "), { ms: 6000 });
   if (doc.readOnly) toast("This PDF is password-protected. You can view it and turn layers on and off. To edit it, connect to the internet once and open it again.", { ms: 7000 });
   else if (doc.password) toast("This PDF has a password. Saved copies keep it. You can change it in Tools.", { ms: 5000 });
+  return true;
 }
 
 async function addFiles(files) {
@@ -177,39 +231,69 @@ async function bringDrawings(doc, pairs) {
 
 /* ---------- document screen ---------- */
 
-function showDoc(doc, tab) {
-  cur = { doc, tab: null, layer: null };
-  home.hidden = true;
-  docScreen.hidden = false;
-  docScreen.classList.remove("immersive");
-  $("docTitle").textContent = doc.name + ".pdf";
-  viewer.setDoc(doc);
-  grid.setDoc(doc);
+function openTab(doc, tab) {
+  const t = { doc, tab, view: null };
+  tabs.push(t);
   doc.on("pages", () => {
+    if (!cur || cur.doc !== doc) return;
     viewer.refresh();
     grid.refresh();
     markup.drawSelection();
-    if (cur && cur.tab === "markup") markup.renderOptions();
+    if (cur.tab === "markup") markup.renderOptions();
     updateDocUi();
   });
-  cur.layer = pushLayer({
+  pushDocLayer();
+  activateTab(t);
+}
+
+function pushDocLayer() {
+  const layer = pushLayer({
     canClose: () => {
-      if (cur && cur.tab === "markup") {
+      if (!cur) return true;
+      if (cur.tab === "markup") {
         setTimeout(() => setTab("view"));
         return false;
       }
-      if (doc.dirty && doc.pages.length) {
-        setTimeout(() => leaveDoc().then((ok) => ok && cur && cur.doc === doc && closeLayer(cur.layer)));
+      if (cur.doc.dirty && cur.doc.pages.length) {
+        setTimeout(() => leaveDoc());
         return false;
       }
+      closingTab = cur;
       return true;
     },
-    onClose: () => teardown(doc)
+    onClose: () => {
+      const i = docLayers.indexOf(layer);
+      if (i >= 0) docLayers.splice(i, 1);
+      const t = closingTab || cur;
+      closingTab = null;
+      if (t) dropTab(t);
+    }
   });
-  setTab(tab);
+  docLayers.push(layer);
+}
+
+function activateTab(t) {
+  if (!t || cur === t) return;
+  if (cur) {
+    if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
+    const v = viewer.saveState();
+    if (v) cur.view = v;
+  }
+  cur = t;
+  home.hidden = true;
+  docScreen.hidden = false;
+  docScreen.classList.remove("immersive");
+  $("docTitle").textContent = t.doc.name + ".pdf";
+  viewer.setDoc(t.doc, t.view);
+  grid.setDoc(t.doc);
+  const want = t.tab === "markup" ? "view" : t.tab || "view";
+  t.tab = null;
+  setTab(want);
+  if (!t.tab) setTab("view");
   updateDocUi();
 }
 
+// Closes the file on screen, asking first if it has unsaved changes. Resolves true once closed.
 async function leaveDoc() {
   if (!cur) return true;
   const doc = cur.doc;
@@ -229,35 +313,99 @@ async function leaveDoc() {
       openSaveSheet(doc, {
         onSaved: () => {
           updateDocUi();
-          if (cur && cur.doc === doc && !doc.dirty) {
-            if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
-            closeLayer(cur.layer);
-          }
+          if (cur && cur.doc === doc && !doc.dirty) closeCurrent();
         }
       });
       return false;
     }
     doc.dirty = false;
   }
-  if (cur && cur.doc === doc) {
-    if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
-    closeLayer(cur.layer);
-  }
+  if (cur && cur.doc === doc) closeCurrent();
   return true;
 }
 
-function teardown(doc) {
-  if (cur && cur.tab === "markup") markup.exit();
-  viewer.hide();
-  viewer.clear();
-  grid.clear();
-  for (const s of doc.sources.values()) closeSource(s);
-  cur = null;
-  docScreen.hidden = true;
-  docScreen.classList.remove("mode-markup", "tab-pages", "tab-view");
-  home.hidden = false;
-  if (pendingReload) location.reload();
+function closeCurrent() {
+  if (!cur) return;
+  if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
+  closingTab = cur;
+  closeLayer(docLayers[docLayers.length - 1]);
 }
+
+// Lets go of a closed file and shows the one before it, or the home screen after the last.
+function dropTab(t) {
+  const i = tabs.indexOf(t);
+  if (i < 0) return;
+  tabs.splice(i, 1);
+  if (cur === t) {
+    if (cur.tab === "markup") markup.exit();
+    viewer.hide();
+    viewer.clear();
+    grid.clear();
+    cur = null;
+  }
+  for (const s of t.doc.sources.values()) closeSource(s);
+  if (!cur && tabs.length) {
+    activateTab(tabs[Math.max(0, i - 1)]);
+    return;
+  }
+  if (!tabs.length) {
+    docScreen.hidden = true;
+    docScreen.classList.remove("mode-markup", "tab-pages", "tab-view");
+    home.hidden = false;
+    renderTabs();
+    if (pendingReload) location.reload();
+    return;
+  }
+  renderTabs();
+}
+
+/* ---------- the tab strip ---------- */
+
+let stripKey = "";
+function renderTabs() {
+  const strip = $("docTabs");
+  const many = tabs.length > 1;
+  docScreen.classList.toggle("has-tabs", many);
+  $("btnNewTab").hidden = many;
+  const key = many ? tabs.map((t) => `${t === cur ? "*" : ""}${t.doc.dirty ? "~" : ""}${t.doc.name}`).join("|") : "";
+  if (key === stripKey) return;
+  stripKey = key;
+  strip.hidden = !many;
+  strip.textContent = "";
+  if (!many) return;
+  for (const t of tabs) {
+    const on = t === cur;
+    const el = h(`<div class="dtab${on ? " on" : ""}">
+      <button type="button" class="dtab-name" role="tab" aria-selected="${on}">${t.doc.dirty ? '<i class="dtab-dot" aria-label="Not saved"></i>' : ""}<span>${esc(t.doc.name)}</span></button>
+      ${on ? `<button type="button" class="dtab-x" aria-label="Close ${esc(t.doc.name)}">${icon("close")}</button>` : ""}
+    </div>`);
+    el.querySelector(".dtab-name").addEventListener("click", () => activateTab(t));
+    const x = el.querySelector(".dtab-x");
+    if (x) x.addEventListener("click", () => leaveDoc());
+    strip.appendChild(el);
+  }
+  const plus = h(`<button type="button" class="dtab-add" aria-label="Open another file">${icon("plus")}</button>`);
+  plus.addEventListener("click", () => openAnother(plus));
+  strip.appendChild(plus);
+  const on = strip.querySelector(".dtab.on");
+  if (on) on.scrollIntoView({ inline: "nearest", block: "nearest" });
+}
+
+async function openAnother(anchor) {
+  if (tabs.length >= MAX_TABS) {
+    toast(`Up to ${MAX_TABS} files can be open at once. Close one first.`, { ms: 5000 });
+    return;
+  }
+  const v = await openMenu(anchor, [
+    { label: "Open a PDF", value: "open", icon: "file" },
+    { label: "Scan pages", value: "scan", icon: "scan" },
+    { label: "Combine files", value: "combine", icon: "combine" }
+  ]);
+  if (v === "open") openPicked();
+  else if (v === "scan") scanToNewTab();
+  else if (v === "combine") $("btnCombine").click();
+}
+$("btnNewTab").addEventListener("click", (e) => openAnother(e.currentTarget));
 
 function setTab(tab) {
   if (!cur) return;
@@ -310,6 +458,7 @@ function updateDocUi() {
   chip.hidden = !c;
   chip.lastElementChild.textContent = `${c} comment${c === 1 ? "" : "s"}`;
   updateSelectionUi(grid.selection.size);
+  renderTabs();
 }
 
 function updateSelectionUi(count) {
@@ -377,8 +526,12 @@ function commentsToggled() {
 }
 
 $("btnSelAll").addEventListener("click", () => grid.setAll(grid.selection.size === 0));
-$("btnAddFiles").addEventListener("click", async () => {
-  const files = await pickFiles({ multiple: true });
+$("btnAddFiles").addEventListener("click", async (e) => {
+  const v = await openMenu(e.currentTarget, [
+    { label: "From files", value: "files", icon: "file" },
+    { label: "Scan pages", value: "scan", icon: "scan" }
+  ]);
+  const files = v === "files" ? await pickFiles({ multiple: true }) : v === "scan" ? await scanPages() : [];
   if (files.length) addFiles(files);
 });
 
@@ -484,7 +637,7 @@ document.addEventListener("keydown", (e) => {
   else if ((k === "delete" || k === "backspace") && cur.tab === "markup" && markup.sel) { e.preventDefault(); markup.deleteSelected(); }
 });
 window.addEventListener("beforeunload", (e) => {
-  if (cur && cur.doc.dirty) { e.preventDefault(); e.returnValue = ""; }
+  if (tabs.some((t) => t.doc.dirty)) { e.preventDefault(); e.returnValue = ""; }
 });
 
 /* ---------- files arriving from other apps ---------- */
@@ -639,7 +792,7 @@ if ("serviceWorker" in navigator && !isAndroidApp) {
   }).catch((e) => console.warn("Offline support unavailable", e));
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!updateAsked) return;
-    if (cur && cur.doc.dirty) { pendingReload = true; toast("Update will finish when you close this file."); }
+    if (tabs.length) { pendingReload = true; toast(tabs.length > 1 ? "Update will finish when you close your files." : "Update will finish when you close this file."); }
     else location.reload();
   });
 }

@@ -34,6 +34,10 @@
           <span class="action-ic" data-icon="combine"></span>
           <span class="action-text"><strong>Combine files</strong><span>Join PDFs and photos into one PDF</span></span>
         </button>
+        <button class="action" id="btnScan" type="button">
+          <span class="action-ic" data-icon="scan"></span>
+          <span class="action-text"><strong>Scan pages</strong><span>Use the camera to turn paper into a PDF</span></span>
+        </button>
       </div>
 
       <p class="warn" id="oldEngine" hidden></p>
@@ -59,7 +63,7 @@
 
       <footer class="titleblock">
         <div><span>Privacy</span>Files stay on this phone. Nothing is uploaded.</div>
-        <div><span>Version</span><b id="appVersion">1.7.2</b></div>
+        <div><span>Version</span><b id="appVersion">1.8.0</b></div>
       </footer>
       <p class="home-credits">Made with open-source pdf.js, pdf-lib, MuPDF and Tesseract. <a href="https://github.com/Surya-Vallala/tesseract-pdf-tools/tree/main/app" target="_blank" rel="noopener">Source and licences</a></p>
     </div>
@@ -72,10 +76,12 @@
         <span id="docTitle"></span>
         <span id="docMeta"></span>
       </div>
+      <button class="ib" id="btnNewTab" type="button" aria-label="Open another file" data-icon="plus"></button>
       <button class="ib" data-undo type="button" aria-label="Undo" data-icon="undo" disabled></button>
       <button class="ib" data-redo type="button" aria-label="Redo" data-icon="redo" disabled></button>
       <button class="btn primary btn-save" id="btnSave" type="button">Save</button>
     </header>
+    <nav class="doc-tabs" id="docTabs" role="tablist" aria-label="Open files" hidden></nav>
 
     <header class="topbar markbar">
       <button class="btn done-btn" id="btnDone" type="button"><span data-icon="check"></span>Done</button>
@@ -94,7 +100,7 @@
       <div id="pagesView" class="pages-view" hidden>
         <div class="pages-head">
           <span id="pagesInfo">Tap pages to select them. Press and hold to drag.</span>
-          <button class="link" id="btnAddFiles" type="button"><span data-icon="plus"></span>Add files</button>
+          <button class="link" id="btnAddFiles" type="button"><span data-icon="plus"></span>Add pages</button>
           <button class="link" id="btnSelAll" type="button">Select all</button>
         </div>
         <div id="grid" class="grid"></div>

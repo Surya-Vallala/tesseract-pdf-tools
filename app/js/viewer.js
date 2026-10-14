@@ -56,12 +56,31 @@ export class Viewer {
 
   /* ---------- document ---------- */
 
-  setDoc(doc) {
+  setDoc(doc, state = null) {
     this.clear();
     this.doc = doc;
     this.zoom = 1;
     this.root.scrollTo(0, 0);
+    this.pendingState = state;
     this.build();
+    if (this.active) this.applyState();
+  }
+
+  // Where you were in a file (zoom and place), so switching tabs comes back to the same spot.
+  saveState() {
+    if (!this.doc || !this.items.length || !this.active || !this.root.clientWidth) return null;
+    const r = this.rootRect();
+    return { zoom: this.zoom, anchor: this.anchorAt(this.contentPoint(r.left, r.top)) };
+  }
+
+  applyState() {
+    const s = this.pendingState;
+    if (!s || !this.doc || !this.root.clientWidth) return;
+    this.pendingState = null;
+    this.zoom = clamp(s.zoom || 1, MIN_ZOOM, MAX_ZOOM);
+    this.layout();
+    const r = this.rootRect();
+    this.restoreAnchor(s.anchor, r.left, r.top);
   }
 
   clear() {
@@ -69,6 +88,7 @@ export class Viewer {
     this.items = [];
     this.wrap.textContent = "";
     this.doc = null;
+    this.pendingState = null;
   }
 
   dropItem(it) {
@@ -293,6 +313,7 @@ export class Viewer {
   show() {
     this.active = true;
     this.layout();
+    this.applyState();
     this.update(true);
   }
 

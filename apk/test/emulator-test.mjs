@@ -48,8 +48,8 @@ try {
   }));
   step("App starts on the home screen", s1.native && s1.home && s1.installCardHidden && !s1.serviceWorker, s1);
 
-  // Make a small 2-page PDF inside the app and save it to Downloads the way the Save sheet does.
-  const savedName = await page.evaluate(async () => {
+  // Make two small PDFs inside the app and save them to Downloads the way the Save sheet does.
+  const savedNames = await page.evaluate(async () => {
     await new Promise((res, rej) => {
       const s = document.createElement("script");
       s.src = "vendor/pdf-lib.min.js";
@@ -58,55 +58,94 @@ try {
       document.head.appendChild(s);
     });
     const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
-    const doc = await PDFDocument.create();
-    const font = await doc.embedFont(StandardFonts.Helvetica);
-    for (let i = 1; i <= 2; i++) {
-      const p = doc.addPage([595, 842]);
-      p.drawRectangle({ x: 60, y: 60, width: 475, height: 722, borderColor: rgb(0.8, 0, 0), borderWidth: 3 });
-      p.drawText(`APK test page ${i}`, { x: 90, y: 740, size: 28, font });
-    }
-    const bytes = await doc.save();
     const { downloadFile } = await import("./js/platform.js");
-    return downloadFile(new File([bytes], "apk-test.pdf", { type: "application/pdf" }));
-  });
-  const listing = adb("shell ls -l /sdcard/Download/");
-  step("Save puts the PDF in Downloads", listing.includes(savedName), { savedName, listing });
-
-  // "Open with": hand that file back to the app through Android, like tapping it in My Files.
-  const rows = adb(`shell content query --uri content://media/external/downloads --projection _id:_display_name`);
-  const m = rows.split("\n").map((l) => l.match(/_id=(\d+), _display_name=(.*)$/)).filter(Boolean).find((x) => x[2].trim() === savedName);
-  if (m) {
-    adb(`shell am start -a android.intent.action.VIEW -t application/pdf -d content://media/external/downloads/${m[1]} -n ${PKG}/.MainActivity`);
-    let opened = null;
-    for (let i = 0; i < 30 && !(opened && opened.doc); i++) {
-      await sleep(1000);
-      opened = await page.evaluate(() => ({
-        doc: !document.getElementById("docScreen").hidden,
-        pages: window.__tpt && window.__tpt.doc ? window.__tpt.doc.pages.length : 0,
-        name: window.__tpt && window.__tpt.doc ? window.__tpt.doc.name : ""
-      })).catch((e) => ({ error: e.message }));
+    const names = [];
+    for (const [name, n] of [["apk-test.pdf", 2], ["apk-test-second.pdf", 1]]) {
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      for (let i = 1; i <= n; i++) {
+        const p = doc.addPage([595, 842]);
+        p.drawRectangle({ x: 60, y: 60, width: 475, height: 722, borderColor: rgb(0.8, 0, 0), borderWidth: 3 });
+        p.drawText(`${name} page ${i}`, { x: 90, y: 740, size: 24, font });
+      }
+      names.push(await downloadFile(new File([await doc.save()], name, { type: "application/pdf" })));
     }
-    await sleep(2500);
+    return names;
+  });
+  const savedName = savedNames[0];
+  const listing = adb("shell ls -l /sdcard/Download/");
+  step("Save puts the PDF in Downloads", savedNames.every((n) => listing.includes(n)), { savedNames, listing });
+
+  // "Open with": hand those files back to the app through Android, like tapping them in My Files.
+  const rows = adb(`shell content query --uri content://media/external/downloads --projection _id:_display_name`);
+  const idOf = (name) => {
+    const m = rows.split("\n").map((l) => l.match(/_id=(\d+), _display_name=(.*)$/)).filter(Boolean).find((x) => x[2].trim() === name);
+    return m ? m[1] : null;
+  };
+  const docState = () => page.evaluate(() => ({
+    doc: !document.getElementById("docScreen").hidden,
+    home: !document.getElementById("home").hidden,
+    pages: window.__tpt && window.__tpt.doc ? window.__tpt.doc.pages.length : 0,
+    name: window.__tpt && window.__tpt.doc ? window.__tpt.doc.name : "",
+    tabs: [...document.querySelectorAll("#docTabs .dtab")].map((d) => d.textContent.trim()),
+    dialog: !!document.querySelector(".dialog")
+  })).catch((e) => ({ error: e.message }));
+  const openWith = async (name) => {
+    adb(`shell am start -a android.intent.action.VIEW -t application/pdf -d content://media/external/downloads/${idOf(name)} -n ${PKG}/.MainActivity`);
+    let st = null;
+    for (let i = 0; i < 30; i++) {
+      await sleep(1000);
+      st = await docState();
+      if (st.doc && st.name === name.replace(/\.pdf$/, "")) break;
+    }
+    await sleep(2000);
+    return st;
+  };
+  if (idOf(savedNames[0]) && idOf(savedNames[1])) {
+    const first = await openWith(savedNames[0]);
     await device.screenshot({ path: `${OUT}/2-opened.png` });
-    step("Open with: the app opens a PDF from Downloads", opened && opened.doc && opened.pages === 2, opened);
+    step("Open with: the app opens a PDF from Downloads", first.doc && first.pages === 2, first);
+    const second = await openWith(savedNames[1]);
+    await device.screenshot({ path: `${OUT}/2b-two-tabs.png` });
+    step("A second file opens in its own tab", second.doc && second.tabs.length === 2 && second.pages === 1, second);
 
     // Back button: one tap on the page first (Chrome only lets a page add Back steps after a touch).
     const size = adb("shell wm size").match(/(\d+)x(\d+)/);
     const w = size ? +size[1] : 1080, h = size ? +size[2] : 2400;
-    adb(`shell input tap ${Math.round(w / 2)} ${Math.round(h * 0.55)}`);
-    await sleep(800);
-    adb("shell input keyevent 4");
-    await sleep(1500);
-    const afterBack = await page.evaluate(() => ({
-      home: !document.getElementById("home").hidden,
-      doc: !document.getElementById("docScreen").hidden,
-      dialog: !!document.querySelector(".dialog")
-    }));
+    const tapAndBack = async () => {
+      adb(`shell input tap ${Math.round(w / 2)} ${Math.round(h * 0.55)}`);
+      await sleep(800);
+      adb("shell input keyevent 4");
+      await sleep(1500);
+      return docState();
+    };
+    const back1 = await tapAndBack();
+    step("Back closes the file on screen and shows the other one", back1.doc && back1.tabs.length === 0 && back1.pages === 2, back1);
+    const back2 = await tapAndBack();
     await device.screenshot({ path: `${OUT}/3-after-back.png` });
-    step("Back closes the file and returns to the home screen", afterBack.home && !afterBack.doc, afterBack);
+    step("Back closes the last file and returns to the home screen", back2.home && !back2.doc, back2);
   } else {
     step("Open with: the app opens a PDF from Downloads", false, { rows });
   }
+
+  // Scan pages: Google's document scanner opens; closing it brings you back to the app.
+  await page.click("#btnScan");
+  let scanFocus = "";
+  for (let i = 0; i < 40; i++) {
+    await sleep(1000);
+    scanFocus = adb("shell dumpsys window | grep -E 'mCurrentFocus'");
+    if (!scanFocus.includes(PKG) && scanFocus.trim()) break;
+    const builtIn = await page.evaluate(() => !!document.querySelector(".scanner")).catch(() => false);
+    if (builtIn) { scanFocus = "built-in scanner"; break; }
+  }
+  await sleep(3000);
+  await device.screenshot({ path: `${OUT}/3b-scanner.png` });
+  const googleScanner = /gms|mlkit|documentscanner/i.test(scanFocus);
+  adb("shell input keyevent 4");
+  await sleep(2500);
+  if (!googleScanner) { adb("shell input keyevent 4"); await sleep(1500); }
+  const afterScan = await docState();
+  step("Scan pages opens Google's document scanner", googleScanner && afterScan.home, { focus: scanFocus.trim(), afterScan });
 
   // Share menu opens, and closing it reports "cancelled" to the app.
   await page.evaluate(() => {

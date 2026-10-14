@@ -125,6 +125,7 @@ async function loadPdfSource(file, name, askPassword) {
     id: ++srcSeq,
     kind: "pdf",
     name,
+    fileSize: file.size,
     bytes,
     pdf,
     pages,

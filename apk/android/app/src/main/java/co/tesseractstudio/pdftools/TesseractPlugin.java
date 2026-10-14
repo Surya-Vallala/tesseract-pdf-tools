@@ -14,6 +14,9 @@ import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.webkit.MimeTypeMap;
 import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.FileProvider;
 import androidx.core.content.IntentCompat;
 import com.getcapacitor.JSArray;
@@ -24,6 +27,9 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -45,6 +51,7 @@ import java.util.Set;
  * - receive PDFs and photos from "Open with" and the Share menu ("incoming" event)
  * - save finished files into the phone's Downloads folder (saveToDownloads)
  * - check for a newer version and install it, only when the person asks (fetchText, installUpdate)
+ * - scan paper with Google's document scanner (scanDocument)
  * Sharing out uses Capacitor's Share plugin; files are written with the Filesystem plugin.
  */
 @CapacitorPlugin(name = "Tesseract")
@@ -57,12 +64,17 @@ public class TesseractPlugin extends Plugin {
     // Updates only ever come from the app's own GitHub site.
     private static final String UPDATE_ROOT = "https://surya-vallala.github.io/tesseract-pdf-tools/";
 
+    private ActivityResultLauncher<IntentSenderRequest> scanLauncher;
+    private PluginCall scanCall;
+
     @Override
     public void load() {
+        scanLauncher = getActivity().registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), this::onScanResult);
         // Files from an earlier session are no longer needed.
         deleteTree(new File(getContext().getCacheDir(), INCOMING_DIR));
         deleteTree(new File(getContext().getCacheDir(), OUTGOING_DIR));
         deleteTree(new File(getContext().getCacheDir(), "updates"));
+        deleteTree(new File(getContext().getCacheDir(), "scans"));
     }
 
     /* ---------- files arriving from other apps ---------- */
@@ -389,6 +401,85 @@ public class TesseractPlugin extends Plugin {
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("Cache-Control", "no-cache");
         return c;
+    }
+
+    /* ---------- scanning with Google's document scanner ---------- */
+
+    @PluginMethod
+    public void scanDocument(PluginCall call) {
+        if (scanCall != null) {
+            call.reject("The scanner is already open.");
+            return;
+        }
+        int limit = Math.max(1, Math.min(100, call.getInt("pageLimit", 60)));
+        GmsDocumentScannerOptions options = new GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(limit)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build();
+        scanCall = call;
+        getBridge().executeOnMainThread(() -> {
+            try {
+                GmsDocumentScanning.getClient(options)
+                    .getStartScanIntent(getActivity())
+                    .addOnSuccessListener((sender) -> scanLauncher.launch(new IntentSenderRequest.Builder(sender).build()))
+                    .addOnFailureListener((e) -> {
+                        Logger.error(TAG, "Google's scanner isn't available", e);
+                        PluginCall c = scanCall;
+                        scanCall = null;
+                        if (c != null) c.reject("Google's scanner isn't available on this phone.", "UNAVAILABLE");
+                    });
+            } catch (Exception e) {
+                Logger.error(TAG, "Google's scanner couldn't start", e);
+                PluginCall c = scanCall;
+                scanCall = null;
+                if (c != null) c.reject("Google's scanner isn't available on this phone.", "UNAVAILABLE");
+            }
+        });
+    }
+
+    private void onScanResult(ActivityResult result) {
+        final PluginCall call = scanCall;
+        scanCall = null;
+        if (call == null) return;
+        GmsDocumentScanningResult res = null;
+        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+            res = GmsDocumentScanningResult.fromActivityResultIntent(result.getData());
+        }
+        if (res == null || res.getPages() == null || res.getPages().isEmpty()) {
+            call.reject("cancelled", "CANCELLED");
+            return;
+        }
+        final List<Uri> uris = new ArrayList<>();
+        for (GmsDocumentScanningResult.Page p : res.getPages()) uris.add(p.getImageUri());
+        new Thread(() -> {
+            File dir = new File(new File(getContext().getCacheDir(), "scans"), String.valueOf(System.currentTimeMillis()));
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            JSArray files = new JSArray();
+            try {
+                for (int i = 0; i < uris.size(); i++) {
+                    String name = "Scan page " + (i + 1) + ".jpg";
+                    File out = new File(dir, name);
+                    try (InputStream in = getContext().getContentResolver().openInputStream(uris.get(i))) {
+                        if (in == null) throw new IOException("No data");
+                        copy(in, new FileOutputStream(out));
+                    }
+                    JSObject f = new JSObject();
+                    f.put("path", out.getAbsolutePath());
+                    f.put("name", name);
+                    f.put("type", "image/jpeg");
+                    files.put(f);
+                }
+                JSObject r = new JSObject();
+                r.put("files", files);
+                call.resolve(r);
+            } catch (Exception e) {
+                Logger.error(TAG, "Couldn't read the scanned pages", e);
+                call.reject("The scanned pages couldn't be read.");
+            }
+        }, "tpt-scan").start();
     }
 
     /* ---------- helpers ---------- */

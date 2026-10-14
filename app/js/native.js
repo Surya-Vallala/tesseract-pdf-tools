@@ -127,3 +127,23 @@ export async function installUpdate(info, onProgress) {
     listener.remove();
   }
 }
+
+/* ---------- scanning with Google's document scanner ---------- */
+
+/** Opens Google's scanner. Resolves the pages as JPEG files, or [] if you cancel. Throws if it isn't available. */
+export async function scanWithGoogle() {
+  let r;
+  try {
+    r = await call("Tesseract", "scanDocument", { pageLimit: 60 });
+  } catch (err) {
+    if (isCancel(err)) return [];
+    throw err;
+  }
+  const files = [];
+  for (const f of r.files || []) {
+    const res = await fetch(cap.convertFileSrc(f.path));
+    if (!res.ok) throw new Error(`Couldn't read ${f.name}`);
+    files.push(new File([await res.blob()], f.name, { type: f.type || "image/jpeg" }));
+  }
+  return files;
+}
