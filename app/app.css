@@ -101,7 +101,10 @@ button { font: inherit; color: inherit; }
 .home-logo { width: 64px; height: 64px; flex: none; }
 .home-head h1 { font-size: 24px; line-height: 1.15; margin: 0; font-weight: 650; letter-spacing: -.01em; }
 .home-sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-.dev-by { margin: auto auto 0; padding: 18px 20px 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; border: 0; border-radius: 14px; background: none; color: var(--muted); font: inherit; font-size: 12px; letter-spacing: .02em; cursor: pointer; }
+.home-spacer { flex: 1 0 0; }
+.dev-by { margin: 20px auto 0; padding: 14px 24px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: none; color: var(--muted); font: inherit; font-size: 12px; letter-spacing: .02em; cursor: pointer; }
+/* A small arrow after "Developed by" hints that it opens something */
+.dev-by > span::after { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 0 1px 7px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg); vertical-align: middle; }
 .dev-by:active { background: var(--accent-soft); }
 .dev-by img { display: block; width: 220px; height: auto; }
 .dev-by + .titleblock { margin-top: 12px; padding-top: 0; }

@@ -14,7 +14,7 @@ import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
 import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc } from "./ui.js";
 
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
