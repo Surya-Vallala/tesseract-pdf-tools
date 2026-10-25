@@ -190,6 +190,32 @@ const OPS = {
     return { bytes: result, changed };
   },
 
+  // Whole pages as pictures (JPEG or PNG), drawings and annotations included.
+  async render(id, bytes, { dpi = 150, maxPx = 3500, format = "jpeg", quality = 90 } = {}) {
+    const doc = new mupdf.PDFDocument(bytes);
+    const n = doc.countPages();
+    const files = [];
+    for (let i = 0; i < n; i++) {
+      progress(id, n > 1 ? `Making picture ${i + 1} of ${n}…` : "Making the picture…");
+      const page = doc.loadPage(i);
+      const [x0, y0, x1, y1] = page.getBounds();
+      let s = dpi / 72;
+      const long = Math.max(x1 - x0, y1 - y0) * s;
+      if (long > maxPx) s *= maxPx / long;
+      const pix = page.toPixmap(mupdf.Matrix.scale(s, s), mupdf.ColorSpace.DeviceRGB, false, true);
+      const res = Math.round(72 * s);
+      try { pix.setResolution(res, res); } catch (e) { /* older engine */ }
+      const enc = format === "png" ? pix.asPNG() : pix.asJPEG(quality, false);
+      const copy = new Uint8Array(enc.length);
+      copy.set(enc);
+      files.push({ bytes: copy, w: pix.getWidth(), h: pix.getHeight() });
+      pix.destroy();
+      page.destroy();
+    }
+    doc.destroy();
+    return files;
+  },
+
   // The pictures inside the PDF, as JPEG or PNG files.
   async images(id, bytes) {
     const doc = new mupdf.PDFDocument(bytes);

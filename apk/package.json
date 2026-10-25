@@ -1,7 +1,7 @@
 {
   "name": "tesseract-pdf-tools-android",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Android (APK) package of the Tesseract PDF Tools phone app in ../app",
   "type": "module",
   "scripts": {

@@ -1,6 +1,6 @@
 // The Tools tab: password, watermark, reduce size, split, recognise text, save text, save images.
 import { h, esc, icon, openSheet, segmented, toast, busy, confirmDialog, openMenu } from "./ui.js";
-import { pickFiles } from "./platform.js";
+import { pickFiles, settings } from "./platform.js";
 import { engine, preloadEngine } from "./engine.js";
 import { buildPdf, exportPdf, openResultSheet, formatSize } from "./save.js";
 import { baseName } from "./doc.js";
@@ -17,7 +17,8 @@ const TOOLS = [
   { id: "split", icon: "split", title: "Split into files", text: "By page ranges, or every page" },
   { id: "ocr", icon: "ocr", title: "Recognise text (OCR)", text: "Make scanned pages searchable and copyable" },
   { id: "text", icon: "textfile", title: "Save text", text: "All the text in a .txt file" },
-  { id: "images", icon: "image", title: "Save images", text: "The pictures inside this PDF" }
+  { id: "pageimg", icon: "pagepic", title: "Save pages as pictures", text: "JPEG or PNG of a page, or of every page" },
+  { id: "images", icon: "image", title: "Save images", text: "The photos and pictures inside this PDF" }
 ];
 
 export function openTools(ctx) {
@@ -43,7 +44,113 @@ function runTool(id, ctx) {
     toast("This PDF is password-protected and couldn't be unlocked here. Connect to the internet once, then open it again.", { ms: 6000 });
     return;
   }
-  ({ password: openPassword, watermark: openWatermark, reduce: openReduce, split: openSplit, ocr: openOcr, text: saveText, images: saveImages })[id](ctx);
+  ({ password: openPassword, watermark: openWatermark, reduce: openReduce, split: openSplit, ocr: openOcr, text: saveText, images: saveImages, pageimg: openPageImages })[id](ctx);
+}
+
+/* ---------- Save pages as pictures ---------- */
+
+const PIC_SIZES = [
+  { v: "standard", label: "Standard", dpi: 150, maxPx: 3500 },
+  { v: "high", label: "High", dpi: 300, maxPx: 7000 }
+];
+
+function picPixels(doc, p, size) {
+  const ps = doc.pageSize(p);
+  let s = size.dpi / 72;
+  const long = Math.max(ps.w, ps.h) * s;
+  if (long > size.maxPx) s *= size.maxPx / long;
+  return { w: Math.round(ps.w * s), h: Math.round(ps.h * s), dpi: Math.round(72 * s) };
+}
+
+/** pages: preselected pages (from the Pages tab), else you choose. */
+export function openPageImages(ctx, pages = null) {
+  const doc = ctx.doc();
+  preloadEngine();
+  const n = doc.pages.length;
+  const current = doc.pages[Math.max(0, Math.min(n - 1, ctx.currentIndex()))];
+  const selected = pages || ctx.selectedPages();
+  let mode = pages ? "sel" : selected.length > 1 ? "sel" : "this";
+  let format = settings.get("pic-format", "jpeg");
+  let sizeV = settings.get("pic-size", "standard");
+  const pageOpts = [{ value: "this", label: n > 1 ? `Page ${doc.pages.indexOf(current) + 1}` : "This page" }];
+  if (selected.length > 1 || pages) pageOpts.push({ value: "sel", label: `${selected.length} selected` });
+  if (n > 1) pageOpts.push({ value: "all", label: `All ${n}` }, { value: "range", label: "Pages…" });
+
+  const body = h(`<div>
+    <div class="field"><span>Pages</span><div data-pages></div></div>
+    <div data-range hidden><input class="input" inputmode="numeric" placeholder="For example 1-3, 6" aria-label="Pages"><p class="form-error" hidden></p></div>
+    <div class="field"><span>Format</span><div data-format></div></div>
+    <div class="field"><span>Size</span><div data-size></div></div>
+    <ul class="save-notes"><li data-info></li><li>Your drawings and the layers you have turned on are included. Comments aren't.</li></ul>
+  </div>`);
+  const rangeBox = body.querySelector("[data-range]");
+  const rangeInput = rangeBox.querySelector("input");
+  const err = rangeBox.querySelector(".form-error");
+  const info = body.querySelector("[data-info]");
+
+  const chosen = () => {
+    if (mode === "this") return [current];
+    if (mode === "sel") return selected;
+    if (mode === "all") return doc.pages;
+    const idx = parseRange(rangeInput.value, n);
+    return idx ? idx.map((i) => doc.pages[i]) : null;
+  };
+  const update = () => {
+    const size = PIC_SIZES.find((x) => x.v === sizeV);
+    const list = chosen();
+    const first = list && list.length ? list[0] : current;
+    const px = picPixels(doc, first, size);
+    const count = list ? list.length : 0;
+    info.textContent = `${count > 1 ? `${count} pictures. The first is` : "The picture is"} ${px.w} × ${px.h} pixels (${px.dpi} dpi). ${format === "png" ? "PNG keeps lines perfectly sharp; files are bigger." : "JPEG makes smaller files, good for WhatsApp."}`;
+  };
+  body.querySelector("[data-pages]").appendChild(segmented(pageOpts, mode, (v) => {
+    mode = v;
+    rangeBox.hidden = v !== "range";
+    if (v === "range") rangeInput.focus();
+    update();
+  }, { small: true, label: "Pages" }));
+  body.querySelector("[data-format]").appendChild(segmented([{ value: "jpeg", label: "JPEG" }, { value: "png", label: "PNG" }], format, (v) => {
+    format = v;
+    settings.set("pic-format", v);
+    update();
+  }, { small: true, label: "Format" }));
+  body.querySelector("[data-size]").appendChild(segmented(PIC_SIZES.map((x) => ({ value: x.v, label: x.label })), sizeV, (v) => {
+    sizeV = v;
+    settings.set("pic-size", v);
+    update();
+  }, { small: true, label: "Size" }));
+  rangeInput.addEventListener("input", () => { err.hidden = true; update(); });
+  update();
+
+  const foot = h(`<div class="foot-row"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="button" data-ok>Save pictures</button></div>`);
+  const sheet = openSheet({ title: "Save pages as pictures", body, foot });
+  foot.querySelector("[data-cancel]").addEventListener("click", () => sheet.close());
+  foot.querySelector("[data-ok]").addEventListener("click", async () => {
+    const list = chosen();
+    if (!list || !list.length) {
+      err.textContent = `Type pages between 1 and ${n}, like 1-3, 6.`;
+      err.hidden = false;
+      return;
+    }
+    const size = PIC_SIZES.find((x) => x.v === sizeV);
+    sheet.close();
+    const b = busy(list.length > 1 ? `Making ${list.length} pictures…` : "Making the picture…");
+    try {
+      const { bytes, blurs, overlays } = await buildPdf(doc, list, { layers: "visible", comments: false, title: doc.name });
+      let src = bytes;
+      if (blurs.length) src = await engine("finalize", [bytes, { blurs, overlays, password: null }], { onProgress: (t) => b.set(t), transfer: [bytes.buffer] });
+      const pics = await engine("render", [src, { dpi: size.dpi, maxPx: size.maxPx, format, quality: 90 }], { onProgress: (t) => b.set(t), transfer: [src.buffer] });
+      b.close();
+      const ext = format === "png" ? "png" : "jpg";
+      const type = format === "png" ? "image/png" : "image/jpeg";
+      const files = pics.map((r, i) => new File([r.bytes], `${doc.name} - page ${doc.pages.indexOf(list[i]) + 1}.${ext}`, { type }));
+      openResultSheet(files.length > 1 ? `${files.length} pictures ready` : "Picture ready", files);
+    } catch (e) {
+      b.close();
+      console.error(e);
+      toast(e && e.code === "offline" ? e.message : "The pictures couldn't be made. Try again, or choose fewer pages or Standard size.", { ms: 6000 });
+    }
+  });
 }
 
 /* ---------- Password ---------- */
@@ -551,7 +658,10 @@ async function saveImages(ctx) {
       }
     }
     b.close();
-    if (!files.length) { toast("There are no pictures in this PDF. Drawings made of lines aren't pictures."); return; }
+    if (!files.length) {
+      toast("There are no photos inside this PDF. To save whole pages as pictures:", { ms: 7000, action: { label: "Save pages", fn: () => openPageImages(ctx) } });
+      return;
+    }
     openResultSheet(`${files.length} image${files.length === 1 ? "" : "s"} found`, files);
   } catch (e) {
     b.close();

@@ -7,7 +7,7 @@ import { openLayers, pickDrawingLayer } from "./layers.js";
 import { openSaveSheet } from "./save.js";
 import { Markup } from "./markup.js";
 import { askAuthor, openBubble, openCommentsList, editComment } from "./comments.js";
-import { openTools } from "./tools.js";
+import { openTools, openPageImages } from "./tools.js";
 import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
 import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
@@ -15,7 +15,7 @@ import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
 import { scanPages } from "./scan.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon } from "./ui.js";
 
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -570,12 +570,14 @@ $("selbar").addEventListener("click", async (e) => {
       break;
     case "more": {
       const v = await openMenu(b, [
+        { label: "Save as pictures", value: "pics", icon: "pagepic" },
         { label: "Duplicate", value: "dup", icon: "copy" },
         { label: "Insert blank page after", value: "blank", icon: "blank" },
         { label: "Move to start", value: "start", icon: "tostart" },
         { label: "Move to end", value: "end", icon: "toend" }
       ], { above: true });
       if (!v) return;
+      if (v === "pics") { openPageImages(toolsCtx, sel); return; }
       doc.commit();
       const keys = new Set(sel.map((p) => p.key));
       if (v === "dup") {
