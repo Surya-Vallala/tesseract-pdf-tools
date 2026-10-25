@@ -1,13 +1,14 @@
 {
-  "version": "1.8.1",
-  "versionCode": 10801,
-  "file": "TesseractPDF-1.8.1.apk",
-  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.1.apk",
+  "version": "1.8.2",
+  "versionCode": 10802,
+  "file": "TesseractPDF-1.8.2.apk",
+  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.2.apk",
   "size_mb": 20.9,
-  "sha256": "afe0ee1cb6001cc8e433bbcff9199b60df2453cee807a3e957b858ef4f7f40a4",
+  "sha256": "2bd3e19d48595de310cc7dc3a9088e39fe016768b079ac33c6364a372f5e8fd2",
   "date": "2026-10-25",
   "notes": [
-    "Save pages as pictures: JPEG or PNG, one page, selected pages or all, with your drawings",
-    "From 1.8.0: tabs for open files, and Scan pages"
+    "Recent files on the home screen: reopen what you opened or saved, with previews",
+    "Tools: Save images is gone; use Save pages as pictures",
+    "From 1.8.1: Save pages as pictures (JPEG or PNG)"
   ]
 }
