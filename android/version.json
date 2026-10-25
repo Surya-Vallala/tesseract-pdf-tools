@@ -1,14 +1,13 @@
 {
-  "version": "1.8.0",
-  "versionCode": 10800,
-  "file": "TesseractPDF-1.8.0.apk",
-  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.0.apk",
+  "version": "1.8.1",
+  "versionCode": 10801,
+  "file": "TesseractPDF-1.8.1.apk",
+  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.1.apk",
   "size_mb": 20.9,
-  "sha256": "69523f0b0e6dee51d3db5e8ba7a97e812e888701b36eb832194400ebc902d210",
-  "date": "2026-10-15",
+  "sha256": "afe0ee1cb6001cc8e433bbcff9199b60df2453cee807a3e957b858ef4f7f40a4",
+  "date": "2026-10-25",
   "notes": [
-    "Tabs: open several files at once and switch between them",
-    "Scan pages: Google's document scanner, from the home screen or Pages > Add pages",
-    "Back closes the file on screen and shows the one before it"
+    "Save pages as pictures: JPEG or PNG, one page, selected pages or all, with your drawings",
+    "From 1.8.0: tabs for open files, and Scan pages"
   ]
 }
