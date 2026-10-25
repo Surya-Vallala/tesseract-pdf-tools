@@ -214,60 +214,6 @@ const OPS = {
     }
     doc.destroy();
     return files;
-  },
-
-  // The pictures inside the PDF, as JPEG or PNG files.
-  async images(id, bytes) {
-    const doc = new mupdf.PDFDocument(bytes);
-    const count = doc.countObjects();
-    const smasks = new Set();
-    for (let i = 1; i < count; i++) {
-      try {
-        const o = doc.newIndirect(i).resolve();
-        if (o.isDictionary()) {
-          const sm = o.get("SMask");
-          if (sm.isIndirect()) smasks.add(sm.asIndirect());
-        }
-      } catch (e) { /* skip */ }
-    }
-    const files = [];
-    for (let i = 1; i < count; i++) {
-      let ref, obj;
-      try { ref = doc.newIndirect(i); obj = ref.resolve(); } catch (e) { continue; }
-      if (!obj.isStream() || String(obj.get("Subtype")) !== "/Image" || smasks.has(i)) continue;
-      if (String(obj.get("ImageMask")) === "true") continue;
-      const w = obj.get("Width").asNumber(), h = obj.get("Height").asNumber();
-      if (w < 48 || h < 48) continue;
-      const n = files.length + 1;
-      if (n % 3 === 1) progress(id, `Saving image ${n}…`);
-      try {
-        const filter = String(obj.get("Filter"));
-        const csName = String(obj.get("ColorSpace"));
-        if (filter === "/DCTDecode" && (csName === "/DeviceRGB" || csName === "/DeviceGray") && obj.get("SMask").isNull()) {
-          const raw = obj.readRawStream();
-          files.push({ name: `image-${String(n).padStart(3, "0")}.jpg`, type: "image/jpeg", bytes: out(raw) });
-          continue;
-        }
-        const image = doc.loadImage(ref);
-        let pix = image.toPixmap();
-        const cs = pix.getColorSpace();
-        if (cs && !cs.isRGB() && !cs.isGray()) {
-          const conv = pix.convertToColorSpace(mupdf.ColorSpace.DeviceRGB, false);
-          pix.destroy();
-          pix = conv;
-        }
-        const png = pix.asPNG();
-        const copy = new Uint8Array(png.length);
-        copy.set(png);
-        files.push({ name: `image-${String(n).padStart(3, "0")}.png`, type: "image/png", bytes: copy });
-        pix.destroy();
-        image.destroy();
-      } catch (e) {
-        // skip images that can't be read
-      }
-    }
-    doc.destroy();
-    return files;
   }
 };
 

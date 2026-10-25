@@ -17,8 +17,7 @@ const TOOLS = [
   { id: "split", icon: "split", title: "Split into files", text: "By page ranges, or every page" },
   { id: "ocr", icon: "ocr", title: "Recognise text (OCR)", text: "Make scanned pages searchable and copyable" },
   { id: "text", icon: "textfile", title: "Save text", text: "All the text in a .txt file" },
-  { id: "pageimg", icon: "pagepic", title: "Save pages as pictures", text: "JPEG or PNG of a page, or of every page" },
-  { id: "images", icon: "image", title: "Save images", text: "The photos and pictures inside this PDF" }
+  { id: "pageimg", icon: "pagepic", title: "Save pages as pictures", text: "JPEG or PNG of a page, or of every page" }
 ];
 
 export function openTools(ctx) {
@@ -44,7 +43,7 @@ function runTool(id, ctx) {
     toast("This PDF is password-protected and couldn't be unlocked here. Connect to the internet once, then open it again.", { ms: 6000 });
     return;
   }
-  ({ password: openPassword, watermark: openWatermark, reduce: openReduce, split: openSplit, ocr: openOcr, text: saveText, images: saveImages, pageimg: openPageImages })[id](ctx);
+  ({ password: openPassword, watermark: openWatermark, reduce: openReduce, split: openSplit, ocr: openOcr, text: saveText, pageimg: openPageImages })[id](ctx);
 }
 
 /* ---------- Save pages as pictures ---------- */
@@ -635,37 +634,5 @@ async function saveText(ctx) {
   } catch (e) {
     b.close();
     toast("The text couldn't be saved. Try again.");
-  }
-}
-
-async function saveImages(ctx) {
-  const doc = ctx.doc();
-  const b = busy("Finding images…");
-  try {
-    const files = [];
-    const seen = new Set();
-    for (const p of doc.pages) {
-      const s = doc.src(p);
-      if (seen.has(s.id)) continue;
-      seen.add(s.id);
-      const prefix = baseName(s.name);
-      if (s.kind === "image") {
-        files.push(new File([s.blob], s.name || `${prefix}.jpg`, { type: s.blob.type || "image/jpeg" }));
-      } else if (s.kind === "pdf") {
-        const bytes = s.bytes.slice();
-        const imgs = await engine("images", [bytes], { onProgress: (t) => b.set(t), transfer: [bytes.buffer] });
-        for (const f of imgs) files.push(new File([f.bytes], `${prefix}-${f.name}`, { type: f.type }));
-      }
-    }
-    b.close();
-    if (!files.length) {
-      toast("There are no photos inside this PDF. To save whole pages as pictures:", { ms: 7000, action: { label: "Save pages", fn: () => openPageImages(ctx) } });
-      return;
-    }
-    openResultSheet(`${files.length} image${files.length === 1 ? "" : "s"} found`, files);
-  } catch (e) {
-    b.close();
-    console.error(e);
-    toast(e && e.code === "offline" ? e.message : "The images couldn't be saved. Try again.", { ms: 6000 });
   }
 }

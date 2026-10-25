@@ -11,6 +11,7 @@ import { engine } from "./engine.js";
 import { layersEdited } from "./layers.js";
 import { openSheet, h, esc, icon, busy, toast, segmented } from "./ui.js";
 import { canShareFiles, shareFiles, downloadFile, downloadFiles, settings } from "./platform.js";
+import { rememberFile } from "./recent.js";
 
 const IMAGE_MAX = 4096;
 const GLYPHLESS_B64 = "AAEAAAAKAIAAAwAgT1MvMkT/RUAAAAEoAAAAYGNtYXAADABzAAABkAAAADRnbHlmAAAAAAAAAcwAAAABaGVhZCzoGYwAAACsAAAANmhoZWED6QH2AAAA5AAAACRobXR4AfQAAAAAAYgAAAAGbG9jYQAAAAAAAAHEAAAABm1heHAAAwACAAABCAAAACBuYW1lGZ8ZNAAAAdAAAABycG9zdJ5/ds8AAAJEAAAALQABAAAAAQAARbS6gV8PPPUAAwPoAAAAAObo7FYAAAAA5ujsVgAAAAAAAAAAAAAAAwACAAAAAAAAAAEAAAPoAAAAAAH0AAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAEAAAACAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAwH0AZAABQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAPz8/PwAAACAAIAPoAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAAgAAAB9AAAAAAAAAAAAAIAAAADAAAAFAADAAEAAAAUAAQAIAAAAAQABAABAAAAIP//AAAAIP///+EAAQAAAAAAAAAAAAAAAAAAAAAAAAAEADYAAQAAAAAAAQANAAAAAQAAAAAAAgAHAA0AAwABBAkAAQAaABQAAwABBAkAAgAOAC5HbHlwaExlc3NGb250UmVndWxhcgBHAGwAeQBwAGgATABlAHMAcwBGAG8AbgB0AFIAZQBnAHUAbABhAHIAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAECBmdseXBoMQAAAA==";
@@ -1023,7 +1024,7 @@ export function openSaveSheet(doc, { pages = null, onSaved } = {}) {
         toast(share ? "The PDF couldn't be saved. Try again, or use Share." : "The PDF couldn't be saved. Try again.", { ms: 6000 });
         return;
       }
-      if (!extract) doc.dirty = false;
+      if (!extract) { doc.dirty = false; rememberFile(file, { doc, how: "saved" }); }
       sheet.close();
       toast(`Saved to Downloads as ${savedName || file.name}`);
       onSaved && onSaved();
@@ -1031,7 +1032,7 @@ export function openSaveSheet(doc, { pages = null, onSaved } = {}) {
     }
     const r = await shareFiles([file], file.name).catch(() => "failed");
     if (r === "shared") {
-      if (!extract) doc.dirty = false;
+      if (!extract) { doc.dirty = false; rememberFile(file, { doc, how: "saved" }); }
       sheet.close();
       onSaved && onSaved();
     } else if (r === "needs-tap") {

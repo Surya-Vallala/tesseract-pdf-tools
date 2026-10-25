@@ -1,7 +1,7 @@
 /* Tesseract PDF Tools - service worker
    Keeps the app working offline and receives files shared from other apps.
    Bump VERSION with every release so phones pick up the new files. */
-const VERSION = "1.8.1";
+const VERSION = "1.8.2";
 const APP_CACHE = "tpt-app-" + VERSION;
 const RUNTIME_CACHE = "tpt-runtime";
 const INBOX_CACHE = "tpt-share-inbox";
@@ -33,6 +33,7 @@ const CORE = [
   "js/native.js",
   "js/scan.js",
   "js/scanimg.js",
+  "js/recent.js",
   "js/contentfilter.js",
   "js/blocks.js",
   "js/blockui.js",

@@ -4,7 +4,7 @@ import { Viewer } from "./viewer.js";
 import { PageGrid } from "./pages.js";
 import { openCrop } from "./crop.js";
 import { openLayers, pickDrawingLayer } from "./layers.js";
-import { openSaveSheet } from "./save.js";
+import { openSaveSheet, formatSize } from "./save.js";
 import { Markup } from "./markup.js";
 import { askAuthor, openBubble, openCommentsList, editComment } from "./comments.js";
 import { openTools, openPageImages } from "./tools.js";
@@ -13,9 +13,10 @@ import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./
 import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
 import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
 import { scanPages } from "./scan.js";
+import { rememberFile, listRecent, recentFile, forgetRecent, clearRecent, when } from "./recent.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon } from "./ui.js";
 
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -86,6 +87,60 @@ $("btnCombine").addEventListener("click", async () => {
   if (files.length) openFiles(files, { combine: true });
 });
 $("btnScan").addEventListener("click", () => scanToNewTab());
+
+/* ---------- recent files ---------- */
+
+async function refreshRecentButton() {
+  const list = await listRecent();
+  $("btnRecent").hidden = !list.length;
+  if (list.length) $("recentSub").textContent = `${list.length} file${list.length === 1 ? "" : "s"}. Last one ${list[0].how === "saved" ? "saved" : "opened"} ${when(list[0].at)}`;
+}
+window.addEventListener("tpt-recent", refreshRecentButton);
+refreshRecentButton();
+$("btnRecent").addEventListener("click", () => openRecentSheet());
+
+async function openRecentSheet() {
+  const list = await listRecent();
+  if (!list.length) { toast("No recent files yet."); return; }
+  const urls = [];
+  const body = h(`<div><div class="recent-list"></div><p class="note">Copies of your last ${list.length > 1 ? "files" : "file"} are kept on this phone, so they open even if the original has moved. Up to 12 files.</p></div>`);
+  const box = body.querySelector(".recent-list");
+  const foot = h(`<div class="foot-row"><button class="btn" type="button" data-clear>Clear list</button><button class="btn primary" type="button" data-close>Close</button></div>`);
+  const sheet = openSheet({ title: "Recent files", body, foot, onClose: () => urls.forEach((u) => URL.revokeObjectURL(u)) });
+  for (const m of list) {
+    const row = h(`<div class="recent-row">
+      <button type="button" class="recent-open">
+        <span class="recent-thumb">${m.thumb ? '<img alt="">' : icon(m.type.startsWith("image/") ? "image" : "file")}</span>
+        <span class="recent-text"><b>${esc(m.name)}</b><small>${m.how === "saved" ? "Saved" : "Opened"} ${esc(when(m.at))} · ${formatSize(m.size)}</small></span>
+      </button>
+      <button type="button" class="ib recent-x" aria-label="Remove ${esc(m.name)} from the list">${icon("close")}</button>
+    </div>`);
+    if (m.thumb) {
+      const u = URL.createObjectURL(m.thumb);
+      urls.push(u);
+      row.querySelector("img").src = u;
+    }
+    row.querySelector(".recent-open").addEventListener("click", async () => {
+      const f = await recentFile(m.id);
+      sheet.close();
+      if (!f) { toast("That file isn't kept any more."); forgetRecent(m.id); return; }
+      openFiles([f], { combine: false });
+    });
+    row.querySelector(".recent-x").addEventListener("click", async () => {
+      await forgetRecent(m.id);
+      row.remove();
+      if (!box.children.length) sheet.close();
+    });
+    box.appendChild(row);
+  }
+  foot.querySelector("[data-close]").addEventListener("click", () => sheet.close());
+  foot.querySelector("[data-clear]").addEventListener("click", async () => {
+    const ok = await confirmDialog({ title: "Clear recent files?", message: "The copies kept on this phone are deleted. Your original files aren't touched.", okText: "Clear", danger: true });
+    if (!ok) return;
+    await clearRecent();
+    sheet.close();
+  });
+}
 
 // "Scan 15-10-2026 09.42"
 function scanName() {
@@ -187,6 +242,7 @@ async function openFiles(files, { combine = false, name = null, tab = null, unsa
   doc.name = name || (loaded.length === 1 ? baseName(loaded[0].name) : "Combined");
   if (loaded.length === 1 && loaded[0].kind === "pdf" && loaded[0].password) doc.password = loaded[0].password;
   openTab(doc, tab || (combine || loaded.length > 1 ? "pages" : "view"));
+  if (!combine && !unsaved && files.length === 1) rememberFile(files[0], { doc });
   if (problems.length) toast(problems.join(" "), { ms: 6000 });
   if (doc.readOnly) toast("This PDF is password-protected. You can view it and turn layers on and off. To edit it, connect to the internet once and open it again.", { ms: 7000 });
   else if (doc.password) toast("This PDF has a password. Saved copies keep it. You can change it in Tools.", { ms: 5000 });
@@ -398,10 +454,12 @@ async function openAnother(anchor) {
   }
   const v = await openMenu(anchor, [
     { label: "Open a PDF", value: "open", icon: "file" },
+    { label: "Recent files", value: "recent", icon: "clock" },
     { label: "Scan pages", value: "scan", icon: "scan" },
     { label: "Combine files", value: "combine", icon: "combine" }
   ]);
   if (v === "open") openPicked();
+  else if (v === "recent") openRecentSheet();
   else if (v === "scan") scanToNewTab();
   else if (v === "combine") $("btnCombine").click();
 }

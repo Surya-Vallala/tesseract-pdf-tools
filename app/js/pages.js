@@ -10,7 +10,7 @@ function thumbKey(doc, p) {
   return renderKey(doc, p) + "|" + (p.items.some((it) => it.kind === "ink" || it.kind === "shape") ? doc.ovVersion || 0 : 0);
 }
 
-async function paintMarks(doc, p, canvas) {
+export async function paintMarks(doc, p, canvas) {
   const vis = new Map(doc.layers.map((l) => [l.id, l.visible]));
   const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) !== false);
   if (!marks.length) return;
