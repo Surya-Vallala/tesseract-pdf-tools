@@ -1,0 +1,130 @@
+{
+  "started": "2026-10-27T03:51:57.460Z",
+  "steps": [
+    {
+      "name": "App starts on the home screen",
+      "ok": true,
+      "info": {
+        "native": true,
+        "home": true,
+        "installCardHidden": true,
+        "shareTipShown": true,
+        "version": "1.8.3",
+        "serviceWorker": false,
+        "oldEngineNotice": false,
+        "dark": false,
+        "ua": "Mozilla/5.0 (Linux; Android 15; sdk_gphone64_x86_64 Build/AE3A.240806.043; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.219 Mobile Safari/537.36"
+      }
+    },
+    {
+      "name": "Save puts the PDF in Downloads",
+      "ok": true,
+      "info": {
+        "savedNames": [
+          "apk-test.pdf",
+          "apk-test-second.pdf"
+        ],
+        "listing": "total 16\n-rwxrwx--- 1 u0_a187 media_rw  925 2026-10-27 03:52 apk-test-second.pdf\n-rwxrwx--- 1 u0_a187 media_rw 1175 2026-10-27 03:52 apk-test.pdf\n"
+      }
+    },
+    {
+      "name": "Open with: the app opens a PDF from Downloads",
+      "ok": true,
+      "info": {
+        "doc": true,
+        "home": false,
+        "pages": 2,
+        "name": "apk-test",
+        "tabs": [],
+        "dialog": false
+      }
+    },
+    {
+      "name": "A second file opens in its own tab",
+      "ok": true,
+      "info": {
+        "doc": true,
+        "home": false,
+        "pages": 1,
+        "name": "apk-test-second",
+        "tabs": [
+          "apk-test",
+          "apk-test-second"
+        ],
+        "dialog": false
+      }
+    },
+    {
+      "name": "Back closes the file on screen and shows the other one",
+      "ok": true,
+      "info": {
+        "doc": true,
+        "home": false,
+        "pages": 2,
+        "name": "apk-test",
+        "tabs": [],
+        "dialog": false
+      }
+    },
+    {
+      "name": "Back closes the last file and returns to the home screen",
+      "ok": true,
+      "info": {
+        "doc": false,
+        "home": true,
+        "pages": 0,
+        "name": "",
+        "tabs": [],
+        "dialog": false
+      }
+    },
+    {
+      "name": "Scan pages opens Google's document scanner",
+      "ok": true,
+      "info": {
+        "focus": "mCurrentFocus=Window{d5db4cc u0 com.google.android.gms/com.google.android.gms.chimera.container.ui.ModuleDownloadActivity}",
+        "afterScan": {
+          "doc": false,
+          "home": true,
+          "pages": 0,
+          "name": "",
+          "tabs": [],
+          "dialog": false
+        }
+      }
+    },
+    {
+      "name": "Share opens Android's share menu and closing it is understood",
+      "ok": true,
+      "info": {
+        "focus": "mCurrentFocus=Window{f2b88d7 u0 com.android.intentresolver/com.android.intentresolver.ChooserActivityLauncher}\n  mFocusedApp=ActivityRecord{11bb730 u0 com.android.intentresolver/.ChooserActivityLauncher t8}",
+        "shareResult": "cancelled"
+      }
+    },
+    {
+      "name": "Check for updates asks first, then reads version.json",
+      "ok": true,
+      "info": "You have the latest version (1.8.3)."
+    },
+    {
+      "name": "Update download is checked and Android's installer opens",
+      "ok": true,
+      "info": {
+        "upd": "installer",
+        "focus": "mCurrentFocus=Window{1ce5d3c u0 com.google.android.packageinstaller/com.android.packageinstaller.PackageInstallerActivity}\n  mFocusedApp=ActivityRecord{507dd4c u0 com.google.android.packageinstaller/com.android.packageinstaller.PackageInstallerActivity t9}"
+      }
+    },
+    {
+      "name": "Back on the home screen leaves the app",
+      "ok": true,
+      "info": "topResumedActivity=ActivityRecord{6aaf9d u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}"
+    }
+  ],
+  "console": [
+    "[error] {message: cancelled, code: CANCELLED}",
+    "[error] {message: Share canceled}"
+  ],
+  "finished": "2026-10-27T03:53:21.112Z",
+  "passed": 11,
+  "failed": 0
+}

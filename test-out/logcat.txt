@@ -1,0 +1,273 @@
+--------- beginning of main
+10-27 03:51:58.175 W/chromium( 1329): [1027/035158.175614:WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+10-27 03:51:59.695 W/chromium( 2030): [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+10-27 03:52:00.008 D/Capacitor( 2030): Starting BridgeActivity
+10-27 03:52:00.045 D/Capacitor( 2030): Registering plugin instance: CapacitorCookies
+10-27 03:52:00.050 D/Capacitor( 2030): Registering plugin instance: WebView
+10-27 03:52:00.053 D/Capacitor( 2030): Registering plugin instance: CapacitorHttp
+10-27 03:52:00.057 D/Capacitor( 2030): Registering plugin instance: SystemBars
+10-27 03:52:00.058 D/Capacitor( 2030): Registering plugin instance: Tesseract
+10-27 03:52:00.065 D/Capacitor( 2030): Registering plugin instance: Share
+10-27 03:52:00.085 W/Capacitor( 2030): Unable to read file at path public/plugins
+10-27 03:52:00.090 D/Capacitor( 2030): Loading app at https://localhost
+10-27 03:52:00.144 W/chromium( 2162): [WARNING:runtime_features.cc(694)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM118 in addition.
+10-27 03:52:00.144 W/chromium( 2162): [WARNING:runtime_features.cc(730)] AttributionReportingCrossAppWeb cannot be enabled in this configuration. Use --enable-features=ConversionMeasurement,AttributionReportingCrossAppWeb in addition.
+10-27 03:52:00.166 D/Capacitor( 2030): App started
+10-27 03:52:00.254 D/Capacitor( 2030): App resumed
+10-27 03:52:00.297 D/Capacitor( 2030): Handling local request: https://localhost/
+10-27 03:52:01.020 D/Capacitor( 2030): Handling local request: https://localhost/app.css
+10-27 03:52:01.027 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdf-lib.min.js
+10-27 03:52:01.033 D/Capacitor( 2030): Handling local request: https://localhost/js/main.js
+10-27 03:52:01.442 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:01.451 D/Capacitor( 2030): Handling local request: https://localhost/icons/tesseract-logo-black.png
+10-27 03:52:02.105 D/Capacitor( 2030): Handling local request: https://localhost/js/doc.js
+10-27 03:52:02.106 D/Capacitor( 2030): Handling local request: https://localhost/js/viewer.js
+10-27 03:52:02.110 D/Capacitor( 2030): Handling local request: https://localhost/js/pages.js
+10-27 03:52:02.116 D/Capacitor( 2030): Handling local request: https://localhost/js/save.js
+10-27 03:52:02.117 D/Capacitor( 2030): Handling local request: https://localhost/js/crop.js
+10-27 03:52:02.117 D/Capacitor( 2030): Handling local request: https://localhost/js/layers.js
+10-27 03:52:02.124 D/Capacitor( 2030): Handling local request: https://localhost/js/markup.js
+10-27 03:52:02.125 D/Capacitor( 2030): Handling local request: https://localhost/js/comments.js
+10-27 03:52:02.130 D/Capacitor( 2030): Handling local request: https://localhost/js/tools.js
+10-27 03:52:02.130 D/Capacitor( 2030): Handling local request: https://localhost/js/interop.js
+10-27 03:52:02.132 D/Capacitor( 2030): Handling local request: https://localhost/js/scan.js
+10-27 03:52:02.133 D/Capacitor( 2030): Handling local request: https://localhost/js/recent.js
+10-27 03:52:02.139 D/Capacitor( 2030): Handling local request: https://localhost/js/platform.js
+10-27 03:52:02.140 D/Capacitor( 2030): Handling local request: https://localhost/js/native.js
+10-27 03:52:02.140 D/Capacitor( 2030): Handling local request: https://localhost/js/engine.js
+10-27 03:52:02.149 D/Capacitor( 2030): Handling local request: https://localhost/js/ui.js
+10-27 03:52:03.991 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdfjs/pdf.min.mjs
+10-27 03:52:03.993 D/Capacitor( 2030): Handling local request: https://localhost/js/overlay.js
+10-27 03:52:03.994 D/Capacitor( 2030): Handling local request: https://localhost/js/shapes.js
+10-27 03:52:03.995 D/Capacitor( 2030): Handling local request: https://localhost/js/geom.js
+10-27 03:52:03.995 D/Capacitor( 2030): Handling local request: https://localhost/js/render.js
+10-27 03:52:04.910 D/Capacitor( 2030): Handling local request: https://localhost/js/watermark.js
+10-27 03:52:04.914 D/Capacitor( 2030): Handling local request: https://localhost/js/contentfilter.js
+10-27 03:52:04.929 D/Capacitor( 2030): Handling local request: https://localhost/js/dgeom.js
+10-27 03:52:04.930 D/Capacitor( 2030): Handling local request: https://localhost/js/snap.js
+10-27 03:52:04.931 D/Capacitor( 2030): Handling local request: https://localhost/js/blocks.js
+10-27 03:52:04.935 D/Capacitor( 2030): Handling local request: https://localhost/js/blockui.js
+10-27 03:52:04.939 D/Capacitor( 2030): Handling local request: https://localhost/js/ocr.js
+10-27 03:52:04.940 D/Capacitor( 2030): Handling local request: https://localhost/js/scanimg.js
+10-27 03:52:05.321 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:05.333 V/Capacitor( 2030): callback: 100941304, pluginId: Tesseract, methodName: addListener, methodData: {"eventName":"incoming"}
+10-27 03:52:05.353 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:05.380 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:12.132 W/chromium( 1622): [1027/035212.131970:WARNING:url_request_context_config.cc(716)] Unrecognized Cronet experimental option "enable_telemetry" with params "false
+10-27 03:52:12.132 W/chromium( 1622): 
+10-27 03:52:12.163 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdf-lib.min.js
+10-27 03:52:13.926 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:13.934 V/Capacitor( 2030): callback: 100941305, pluginId: Tesseract, methodName: writeChunk, methodData: {"id":"4osjma60mvq5g4t3","name":"apk-test.pdf","mime":"application\/pdf","data":"JVBERi0xLjcKJYGBgYEKCjYgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCAxNTcKPj4Kc3RyZWFtCnicZU29CsJADN7zFJkFNZemyRXEoVh0cFFvEwep9Y92qIi+vncdRJCE74+QrweaeKQ42yVk+Ib9IeoTuCFzqJS27r5Bwn+bKKExYwti+Y+iyFfYwQZ6KMNwSvi4wHTVtK\/meauPY6PCiyfzBbJgOEPC9bekiI+FMHQwU2ekJS9MNLfMhKvoRZUpslPTnClzcwx3CCOoQmz9AEOULm8KZW5kc3RyZWFtCmVuZG9iagoKOCAwIG9iago8PAovRmlsdGVyIC9GbGF0ZURlY29kZQovTGVuZ3RoIDE1Nwo+PgpzdHJlYW0KeJxlTb0KwkAM3vMUmQU1l94lLYhDsejgot4mDlLrH+1QEX19cx1EkITvJyT5eqBJjmS1XUKGb9gfTJ\/ADTOHQqnr7jtI+G8TJVRmbMFr+FFkfIUdbKCHMg6rhI8LTFdN+2qet\/o4LtSz5BwkR\/YYz5Bw\/Q0p7LEnjB3MxClJyQv1EjSzs8q8F2EydqISmDKeY7xDHEEVLfUDQrMubQplbmRzdHJlYW0KZW5kb2JqCgo5IDAgb2JqCjw8Ci9GaWx0ZXIgL0ZsYXRlRGVjb2RlCi9UeXBlIC9PYmpTdG0KL04gNgovRmlyc3QgMzIKL0xlbmd0aCAzODQKPj4Kc3RyZWFtCnic1VPBSsQwEL3nK+aoB8k0bZNUloV1t1UQUVRQFA+1DUtFEmmzon\/vTLsqHsSDeJDymszMm8lM85oAgoIcIQWbQQZ5aiEHrRAMmKKA2UzIy9cnB\/KsXrtByOOuHeCWOAjnxOH3nZDLsPERlJjPxWfGso71Y1iLKRUSJr8zzvrQbhrXw6wqqwrRIKLOCBpRrWhdEgqCIptiytKeYLItyGdSxHRBsWqCNlMOx0duvs0vaSWuZs5q4mZ2sj\/O5bPKqYb6qZ9iLuRJaFd1dLCz2leodILKYJqrJL3Zpc\/RuzqG\/zvc2H8X\/LcTfrnnKvgo5MXmPo4mOxMhD+rBcQTkkXt8drFraiFL34S282uQV51f+KF7d3ytyIJh2fSO8ifdyHM3hE3fkJCYN1bmzUfxPYOFpcmNLUjHW6nJ69P7B9eMVDbLl3h4EXmqycG+E9d29UF4IVUjPXmR06+gWNUL70NktY8K95G6YUtvVf\/7lguTKW1Vru0ft2w\/W34D80n4IAplbmRzdHJlYW0KZW5kb2JqCgoxMCAwIG9iago8PAovU2l6ZSAxMQovUm9vdCAyIDAgUgovSW5mbyAzIDAgUgovRmlsdGVyIC9GbGF0ZURlY29kZQovVHlwZSAvWFJlZgovTGVuZ3RoIDQ3Ci9XIFsgMSAyIDIgXQovSW5kZXggWyAwIDExIF0KPj4Kc3RyZWFtCnicJcmhEQAgDATB+wQEjv7LoQ7qwAZ+MGsWqAoGGJkwaZqYP7o4IO1HLriIvgT8CmVuZHN0cmVhbQplbmRvYmoKCnN0YXJ0eHJlZgo5NjIKJSVFT0Y=","append":false}
+10-27 03:52:14.031 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"path":"/data/user/0/co.tesseractstudio.pdftools/cache/tpt-out/4osjma60mvq5g4t3/apk-test.pdf","name":"apk-test.pdf"}
+10-27 03:52:14.032 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:14.033 V/Capacitor( 2030): callback: 100941306, pluginId: Tesseract, methodName: saveToDownloads, methodData: {"path":"\/data\/user\/0\/co.tesseractstudio.pdftools\/cache\/tpt-out\/4osjma60mvq5g4t3\/apk-test.pdf","name":"apk-test.pdf","mime":"application\/pdf"}
+10-27 03:52:14.528 W/chromium( 1622): [1027/035214.528574:WARNING:url_request_context_config.cc(716)] Unrecognized Cronet experimental option "enable_telemetry" with params "false
+10-27 03:52:14.528 W/chromium( 1622): 
+10-27 03:52:15.067 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"name":"apk-test.pdf","folder":"Downloads"}
+10-27 03:52:15.093 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:15.095 V/Capacitor( 2030): callback: 100941307, pluginId: Tesseract, methodName: writeChunk, methodData: {"id":"qrlhiyhmmvq5g5pq","name":"apk-test-second.pdf","mime":"application\/pdf","data":"JVBERi0xLjcKJYGBgYEKCjYgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCAxNjcKPj4Kc3RyZWFtCnicZU49C8JADN3zKzILau4ul7QgDsWqg4t6mzhIrV+0Q0X073vXoQiS8N7LS0jSAU0ypBi7FTj8wOEY9RlM7xkUSlm1g5Hwv0yUUK3FBlj9j6LIN9jDFjooQj9K+LzCdF037\/p1r05jpTzjjDTL0TKGCyTcDEfyuJgJQwszMUpS2IWyeHXKUTnx4mQppbAtY5dFLEU2ouItOTPH8IAwgjLEH77sCzGECmVuZHN0cmVhbQplbmRvYmoKCjcgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL1R5cGUgL09ialN0bQovTiA1Ci9GaXJzdCAyNgovTGVuZ3RoIDM2NAo+PgpzdHJlYW0KeJzVkt9LwzAQx9\/zV9yjPkjS9EdaGYNtbRVkKJugKD5kbRiVkUibyfzvvWu7yR7EZylHcnffu+TSTwACJEQRhKBSiCAOJcSQBBFMJow\/fn0Y4A96azrG75q6g1fMCljBG+MLt7ceAjadsh\/tQnu9c1s2FEFA4qPioXX1vjItTMqiLIVQQogkQkuEkDmuC7QMTaKPOZniHk1Fo2FMhUKEM8yVgyVqqKF8r43H+gJX1CakyQdtlA7+6Vw6qxh6yL\/uk00ZX7o6197ARX4thUwCIZUIYxnEL5f4HK3R3v3f4fr7N87+OuHZfy6d9Yyv9xvfuxQMGJ\/rzlAG+K3ZfRrfVJrxwlaubuwW+FNjZ7ZrjoHzjgQMYdMaoqrnhq9M5\/ZthSCRru9Mm1PzKyWyFCdXaYbsjqjx5\/vNu6l6KbnFwd+sPU01BCi2NHWj5+6APAv84iyGNJJE9cxa54nznnDr8TbkJSP1WPwNhDTF8AplbmRzdHJlYW0KZW5kb2JqCgo4IDAgb2JqCjw8Ci9TaXplIDkKL1Jvb3QgMiAwIFIKL0luZm8gMyAwIFIKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL1R5cGUgL1hSZWYKL0xlbmd0aCA0MAovVyBbIDEgMiAyIF0KL0luZGV4IFsgMCA5IF0KPj4Kc3RyZWFtCnicFcSxEQAwCAOxt8Nd2uw\/FgsRrELAjLmQlJxOKvFAYnPDB1whAx4KZW5kc3RyZWFtCmVuZG9iagoKc3RhcnR4cmVmCjcyMgolJUVPRg==","append":false}
+10-27 03:52:15.199 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"path":"/data/user/0/co.tesseractstudio.pdftools/cache/tpt-out/qrlhiyhmmvq5g5pq/apk-test-second.pdf","name":"apk-test-second.pdf"}
+10-27 03:52:15.206 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:15.207 V/Capacitor( 2030): callback: 100941308, pluginId: Tesseract, methodName: saveToDownloads, methodData: {"path":"\/data\/user\/0\/co.tesseractstudio.pdftools\/cache\/tpt-out\/qrlhiyhmmvq5g5pq\/apk-test-second.pdf","name":"apk-test-second.pdf","mime":"application\/pdf"}
+10-27 03:52:16.008 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"name":"apk-test-second.pdf","folder":"Downloads"}
+10-27 03:52:18.167 D/Capacitor( 2030): App paused
+10-27 03:52:18.169 D/Capacitor( 2030): App resumed
+10-27 03:52:18.285 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"files":[{"path":"/data/user/0/co.tesseractstudio.pdftools/cache/incoming/1793073138168/apk-test.pdf","name":"apk-test.pdf","type":"application/pdf","size":1175}],"error":false,"partial":false}
+10-27 03:52:18.288 D/Capacitor( 2030): Handling local request: https://localhost/_capacitor_file_/data/user/0/co.tesseractstudio.pdftools/cache/incoming/1793073138168/apk-test.pdf
+10-27 03:52:18.327 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdfjs/pdf.worker.min.mjs
+10-27 03:52:20.998 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf
+10-27 03:52:23.824 D/Capacitor( 2030): App paused
+10-27 03:52:23.824 D/Capacitor( 2030): App resumed
+10-27 03:52:23.913 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"files":[{"path":"/data/user/0/co.tesseractstudio.pdftools/cache/incoming/1793073143825/apk-test-second.pdf","name":"apk-test-second.pdf","type":"application/pdf","size":925}],"error":false,"partial":false}
+10-27 03:52:23.917 D/Capacitor( 2030): Handling local request: https://localhost/_capacitor_file_/data/user/0/co.tesseractstudio.pdftools/cache/incoming/1793073143825/apk-test-second.pdf
+10-27 03:52:23.953 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdfjs/pdf.worker.min.mjs
+10-27 03:52:24.617 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:24.621 D/Capacitor( 2030): Handling local request: https://localhost/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf
+10-27 03:52:24.655 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:29.228 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:29.232 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:30.795 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:30.811 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:31.709 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:31.710 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:33.986 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:33.996 V/Capacitor( 2030): callback: 100941309, pluginId: Tesseract, methodName: scanDocument, methodData: {"pageLimit":60}
+10-27 03:52:34.230 D/Capacitor( 2030): App paused
+10-27 03:52:35.920 D/Capacitor( 2030): App stopped
+10-27 03:52:35.921 D/Capacitor( 2030): Saving instance state!
+10-27 03:52:39.664 D/Capacitor( 2030): App restarted
+10-27 03:52:39.665 D/Capacitor( 2030): App started
+10-27 03:52:39.670 D/Capacitor( 2030): Unable to find a Capacitor plugin to handle requestCode, trying Cordova plugins 380457066
+10-27 03:52:39.672 D/Capacitor( 2030): Sending plugin error: {"save":false,"callbackId":"100941309","pluginId":"Tesseract","methodName":"scanDocument","success":false,"error":{"message":"cancelled","code":"CANCELLED"}}
+10-27 03:52:39.676 D/Capacitor( 2030): App resumed
+10-27 03:52:39.688 E/Capacitor/Console( 2030): File:  - Line 330 - Msg: [object Object]
+10-27 03:52:42.010 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:42.011 V/Capacitor( 2030): callback: 100941310, pluginId: Tesseract, methodName: writeChunk, methodData: {"id":"rk5lomfjmvq5gqhg","name":"share-test.pdf","mime":"application\/pdf","data":"JVBERi0xLjQK","append":false}
+10-27 03:52:42.034 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"path":"/data/user/0/co.tesseractstudio.pdftools/cache/tpt-out/rk5lomfjmvq5gqhg/share-test.pdf","name":"share-test.pdf"}
+10-27 03:52:42.035 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:42.038 V/Capacitor( 2030): callback: 100941311, pluginId: Share, methodName: share, methodData: {"files":["file:\/\/\/data\/user\/0\/co.tesseractstudio.pdftools\/cache\/tpt-out\/rk5lomfjmvq5gqhg\/share-test.pdf"],"title":"share-test.pdf","dialogTitle":"Share"}
+10-27 03:52:42.190 D/Capacitor( 2030): App paused
+10-27 03:52:46.835 D/Capacitor( 2030): Unable to find a Capacitor plugin to handle requestCode, trying Cordova plugins 2043361463
+10-27 03:52:46.835 D/Capacitor( 2030): Sending plugin error: {"save":false,"callbackId":"100941311","pluginId":"Share","methodName":"share","success":false,"error":{"message":"Share canceled"}}
+10-27 03:52:46.842 D/Capacitor( 2030): App resumed
+10-27 03:52:46.851 E/Capacitor/Console( 2030): File:  - Line 330 - Msg: [object Object]
+10-27 03:52:49.500 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:49.513 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:51.237 D/Capacitor( 2030): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:52:51.248 D/Capacitor( 2030): Handling local request: https://localhost/icons/icon.svg
+10-27 03:52:52.807 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:52.808 V/Capacitor( 2030): callback: 100941312, pluginId: Tesseract, methodName: fetchText, methodData: {"url":"https:\/\/surya-vallala.github.io\/tesseract-pdf-tools\/android\/version.json?t=1793073172804"}
+10-27 03:52:54.034 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"text":"{\n  \"version\": \"1.8.2\",\n  \"versionCode\": 10802,\n  \"file\": \"TesseractPDF-1.8.2.apk\",\n  \"url\": \"https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.2.apk\",\n  \"size_mb\": 20.9,\n  \"sha256\": \"2bd3e19d48595de310cc7dc3a9088e39fe016768b079ac33c6364a372f5e8fd2\",\n  \"date\": \"2026-10-25\",\n  \"notes\": [\n    \"Recent files on the home screen: reopen what you opened or saved, with previews\",\n    \"Tools: Save images is gone; use Save pages as pictures\",\n    \"From 1.8.1: Save pages as pictures (JPEG or PNG)\"\n  ]\n}\n"}
+10-27 03:52:55.769 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:55.773 V/Capacitor( 2030): callback: 100941313, pluginId: Tesseract, methodName: fetchText, methodData: {"url":"https:\/\/surya-vallala.github.io\/tesseract-pdf-tools\/android\/version.json?t=1793073175767"}
+10-27 03:52:55.791 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"text":"{\n  \"version\": \"1.8.2\",\n  \"versionCode\": 10802,\n  \"file\": \"TesseractPDF-1.8.2.apk\",\n  \"url\": \"https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.2.apk\",\n  \"size_mb\": 20.9,\n  \"sha256\": \"2bd3e19d48595de310cc7dc3a9088e39fe016768b079ac33c6364a372f5e8fd2\",\n  \"date\": \"2026-10-25\",\n  \"notes\": [\n    \"Recent files on the home screen: reopen what you opened or saved, with previews\",\n    \"Tools: Save images is gone; use Save pages as pictures\",\n    \"From 1.8.1: Save pages as pictures (JPEG or PNG)\"\n  ]\n}\n"}
+10-27 03:52:55.792 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:55.794 V/Capacitor( 2030): callback: 100941314, pluginId: Tesseract, methodName: addListener, methodData: {"eventName":"updateProgress"}
+10-27 03:52:55.803 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:55.805 V/Capacitor( 2030): callback: 100941315, pluginId: Tesseract, methodName: installUpdate, methodData: {"url":"https:\/\/surya-vallala.github.io\/tesseract-pdf-tools\/android\/TesseractPDF-1.8.2.apk","sha256":"2bd3e19d48595de310cc7dc3a9088e39fe016768b079ac33c6364a372f5e8fd2"}
+10-27 03:52:56.177 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":270336,"total":21885843}
+10-27 03:52:56.220 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":534336,"total":21885843}
+10-27 03:52:56.261 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":804672,"total":21885843}
+10-27 03:52:56.286 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":1075008,"total":21885843}
+10-27 03:52:56.313 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":1345344,"total":21885843}
+10-27 03:52:56.341 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":1615680,"total":21885843}
+10-27 03:52:56.365 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":1885824,"total":21885843}
+10-27 03:52:56.390 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":2156160,"total":21885843}
+10-27 03:52:56.421 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":2426496,"total":21885843}
+10-27 03:52:56.448 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":2696832,"total":21885843}
+10-27 03:52:56.473 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":2967168,"total":21885843}
+10-27 03:52:56.495 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":3237312,"total":21885843}
+10-27 03:52:56.518 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":3507648,"total":21885843}
+10-27 03:52:56.549 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":3777984,"total":21885843}
+10-27 03:52:56.576 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":4048320,"total":21885843}
+10-27 03:52:56.599 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":4318656,"total":21885843}
+10-27 03:52:56.634 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":4588800,"total":21885843}
+10-27 03:52:56.663 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":4859136,"total":21885843}
+10-27 03:52:56.688 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":5129472,"total":21885843}
+10-27 03:52:56.722 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":5399808,"total":21885843}
+10-27 03:52:56.750 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":5670144,"total":21885843}
+10-27 03:52:56.778 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":5940480,"total":21885843}
+10-27 03:52:56.825 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":6210624,"total":21885843}
+10-27 03:52:56.849 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":6480960,"total":21885843}
+10-27 03:52:56.876 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":6751296,"total":21885843}
+10-27 03:52:56.912 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":7021632,"total":21885843}
+10-27 03:52:56.962 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":7291968,"total":21885843}
+10-27 03:52:56.976 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":7562304,"total":21885843}
+10-27 03:52:57.014 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":7832640,"total":21885843}
+10-27 03:52:57.036 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":8102976,"total":21885843}
+10-27 03:52:57.063 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":8369216,"total":21885843}
+10-27 03:52:57.087 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":8639552,"total":21885843}
+10-27 03:52:57.114 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":8909888,"total":21885843}
+10-27 03:52:57.132 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":9180224,"total":21885843}
+10-27 03:52:57.153 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":9450560,"total":21885843}
+10-27 03:52:57.188 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":9720896,"total":21885843}
+10-27 03:52:57.213 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":9991232,"total":21885843}
+10-27 03:52:57.246 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":10261568,"total":21885843}
+10-27 03:52:57.272 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":10531904,"total":21885843}
+10-27 03:52:57.300 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":10802240,"total":21885843}
+10-27 03:52:57.335 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":11071616,"total":21885843}
+10-27 03:52:57.360 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":11341952,"total":21885843}
+10-27 03:52:57.396 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":11612288,"total":21885843}
+10-27 03:52:57.422 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":11880000,"total":21885843}
+10-27 03:52:57.448 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":12150336,"total":21885843}
+10-27 03:52:57.480 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":12420672,"total":21885843}
+10-27 03:52:57.534 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":12691008,"total":21885843}
+10-27 03:52:57.597 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":12961344,"total":21885843}
+10-27 03:52:57.633 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":13231680,"total":21885843}
+10-27 03:52:57.660 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":13502016,"total":21885843}
+10-27 03:52:57.698 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":13771456,"total":21885843}
+10-27 03:52:57.726 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":14041792,"total":21885843}
+10-27 03:52:57.754 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":14312128,"total":21885843}
+10-27 03:52:57.788 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":14579840,"total":21885843}
+10-27 03:52:57.812 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":14850176,"total":21885843}
+10-27 03:52:57.838 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":15120512,"total":21885843}
+10-27 03:52:57.868 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":15388224,"total":21885843}
+10-27 03:52:57.893 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":15658560,"total":21885843}
+10-27 03:52:57.914 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":15928896,"total":21885843}
+10-27 03:52:57.937 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":16199232,"total":21885843}
+10-27 03:52:57.964 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":16469568,"total":21885843}
+10-27 03:52:57.996 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":16739904,"total":21885843}
+10-27 03:52:58.011 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":17009984,"total":21885843}
+10-27 03:52:58.048 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":17280320,"total":21885843}
+10-27 03:52:58.068 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":17550656,"total":21885843}
+10-27 03:52:58.087 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":17820992,"total":21885843}
+10-27 03:52:58.115 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":18091328,"total":21885843}
+10-27 03:52:58.139 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":18356480,"total":21885843}
+10-27 03:52:58.162 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":18626816,"total":21885843}
+10-27 03:52:58.190 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":18897152,"total":21885843}
+10-27 03:52:58.223 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":19167488,"total":21885843}
+10-27 03:52:58.246 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":19437824,"total":21885843}
+10-27 03:52:58.283 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":19707968,"total":21885843}
+10-27 03:52:58.307 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":19978304,"total":21885843}
+10-27 03:52:58.333 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":20248640,"total":21885843}
+10-27 03:52:58.360 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":20518976,"total":21885843}
+10-27 03:52:58.382 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":20789312,"total":21885843}
+10-27 03:52:58.423 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":21058176,"total":21885843}
+10-27 03:52:58.449 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":21328512,"total":21885843}
+10-27 03:52:58.481 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":21598848,"total":21885843}
+10-27 03:52:58.559 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: {"done":21869184,"total":21885843}
+10-27 03:52:58.563 D/Capacitor( 2030): App paused
+10-27 03:52:58.571 I/Capacitor/Console( 2030): File:  - Line 333 - Msg: undefined
+10-27 03:52:58.572 D/Capacitor/Console( 2030): File:  - Line 194 - Msg: Removing listener Tesseract updateProgress
+10-27 03:52:58.572 I/Capacitor/Console( 2030): File:  - Line 349 - Msg: [object Object]
+10-27 03:52:58.572 V/Capacitor( 2030): callback: 100941316, pluginId: Tesseract, methodName: removeListener, methodData: {"callbackId":"100941314","eventName":"updateProgress"}
+10-27 03:53:03.596 D/Capacitor( 2030): App resumed
+10-27 03:53:05.576 D/Capacitor( 2030): App paused
+10-27 03:53:11.750 E/chromium( 4615): [1027/035311.732880:ERROR:variations_seed_loader.cc(37)] Seed missing signature.
+10-27 03:53:12.008 E/chromium( 4615): [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/co.tesseractstudio.pdftools/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+10-27 03:53:12.008 E/chromium( 4615): [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-27 03:53:12.194 D/Capacitor( 4615): Starting BridgeActivity
+10-27 03:53:12.247 D/Capacitor( 4615): Registering plugin instance: CapacitorCookies
+10-27 03:53:12.260 D/Capacitor( 4615): Registering plugin instance: WebView
+10-27 03:53:12.263 D/Capacitor( 4615): Registering plugin instance: CapacitorHttp
+10-27 03:53:12.269 D/Capacitor( 4615): Registering plugin instance: SystemBars
+10-27 03:53:12.278 D/Capacitor( 4615): Registering plugin instance: Tesseract
+10-27 03:53:12.293 D/Capacitor( 4615): Registering plugin instance: Share
+10-27 03:53:12.324 W/Capacitor( 4615): Unable to read file at path public/plugins
+10-27 03:53:12.344 D/Capacitor( 4615): Loading app at https://localhost
+10-27 03:53:12.427 D/Capacitor( 4615): App started
+10-27 03:53:12.432 D/Capacitor( 4615): App resumed
+10-27 03:53:12.510 D/Capacitor( 4615): Handling local request: https://localhost/
+10-27 03:53:12.549 W/chromium( 4665): [WARNING:runtime_features.cc(694)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM118 in addition.
+10-27 03:53:12.550 W/chromium( 4665): [WARNING:runtime_features.cc(730)] AttributionReportingCrossAppWeb cannot be enabled in this configuration. Use --enable-features=ConversionMeasurement,AttributionReportingCrossAppWeb in addition.
+10-27 03:53:12.908 D/Capacitor( 4615): Handling local request: https://localhost/app.css
+10-27 03:53:12.912 D/Capacitor( 4615): Handling local request: https://localhost/vendor/pdf-lib.min.js
+10-27 03:53:12.950 D/Capacitor( 4615): Handling local request: https://localhost/js/main.js
+10-27 03:53:13.296 D/Capacitor( 4615): Handling local request: https://localhost/icons/icon.svg
+10-27 03:53:13.328 D/Capacitor( 4615): Handling local request: https://localhost/icons/tesseract-logo-white.png
+10-27 03:53:14.129 D/Capacitor( 4615): Handling local request: https://localhost/js/doc.js
+10-27 03:53:14.134 D/Capacitor( 4615): Handling local request: https://localhost/js/viewer.js
+10-27 03:53:14.134 D/Capacitor( 4615): Handling local request: https://localhost/js/pages.js
+10-27 03:53:14.158 D/Capacitor( 4615): Handling local request: https://localhost/js/crop.js
+10-27 03:53:14.162 D/Capacitor( 4615): Handling local request: https://localhost/js/save.js
+10-27 03:53:14.163 D/Capacitor( 4615): Handling local request: https://localhost/js/comments.js
+10-27 03:53:14.163 D/Capacitor( 4615): Handling local request: https://localhost/js/tools.js
+10-27 03:53:14.163 D/Capacitor( 4615): Handling local request: https://localhost/js/engine.js
+10-27 03:53:14.163 D/Capacitor( 4615): Handling local request: https://localhost/js/interop.js
+10-27 03:53:14.163 D/Capacitor( 4615): Handling local request: https://localhost/js/platform.js
+10-27 03:53:14.172 D/Capacitor( 4615): Handling local request: https://localhost/js/layers.js
+10-27 03:53:14.185 D/Capacitor( 4615): Handling local request: https://localhost/js/native.js
+10-27 03:53:14.203 D/Capacitor( 4615): Handling local request: https://localhost/js/markup.js
+10-27 03:53:14.209 D/Capacitor( 4615): Handling local request: https://localhost/js/scan.js
+10-27 03:53:14.216 D/Capacitor( 4615): Handling local request: https://localhost/js/recent.js
+10-27 03:53:14.219 D/Capacitor( 4615): Handling local request: https://localhost/js/ui.js
+10-27 03:53:14.246 D/Capacitor( 4615): Handling local request: https://localhost/vendor/pdfjs/pdf.min.mjs
+10-27 03:53:14.249 D/Capacitor( 4615): Handling local request: https://localhost/js/render.js
+10-27 03:53:14.249 D/Capacitor( 4615): Handling local request: https://localhost/js/overlay.js
+10-27 03:53:14.250 D/Capacitor( 4615): Handling local request: https://localhost/js/geom.js
+10-27 03:53:14.251 D/Capacitor( 4615): Handling local request: https://localhost/js/shapes.js
+10-27 03:53:14.254 D/Capacitor( 4615): Handling local request: https://localhost/js/watermark.js
+10-27 03:53:14.257 D/Capacitor( 4615): Handling local request: https://localhost/js/dgeom.js
+10-27 03:53:14.258 D/Capacitor( 4615): Handling local request: https://localhost/js/ocr.js
+10-27 03:53:14.260 D/Capacitor( 4615): Handling local request: https://localhost/js/contentfilter.js
+10-27 03:53:14.279 D/Capacitor( 4615): Handling local request: https://localhost/js/snap.js
+10-27 03:53:14.279 D/Capacitor( 4615): Handling local request: https://localhost/js/blocks.js
+10-27 03:53:14.279 D/Capacitor( 4615): Handling local request: https://localhost/js/blockui.js
+10-27 03:53:15.921 D/Capacitor( 4615): Handling local request: https://localhost/js/scanimg.js
+10-27 03:53:16.298 I/Capacitor/Console( 4615): File:  - Line 349 - Msg: [object Object]
+10-27 03:53:16.303 V/Capacitor( 4615): callback: 25928978, pluginId: Tesseract, methodName: addListener, methodData: {"eventName":"incoming"}
+10-27 03:53:16.372 D/Capacitor( 4615): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:53:16.384 D/Capacitor( 4615): Handling local request: https://localhost/icons/icon.svg
+10-27 03:53:19.847 D/Capacitor( 4615): Handling local request: https://localhost/icons/favicon-48.png
+10-27 03:53:19.849 D/Capacitor( 4615): Handling local request: https://localhost/icons/tesseract-logo-black.png
+10-27 03:53:19.851 D/Capacitor( 4615): Handling local request: https://localhost/icons/icon.svg
