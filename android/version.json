@@ -1,14 +1,13 @@
 {
-  "version": "1.8.2",
-  "versionCode": 10802,
-  "file": "TesseractPDF-1.8.2.apk",
-  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.2.apk",
+  "version": "1.8.3",
+  "versionCode": 10803,
+  "file": "TesseractPDF-1.8.3.apk",
+  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.3.apk",
   "size_mb": 20.9,
-  "sha256": "2bd3e19d48595de310cc7dc3a9088e39fe016768b079ac33c6364a372f5e8fd2",
-  "date": "2026-10-25",
+  "sha256": "45813965ce504072363661c50ad2f5bb2f0b721035c6f1d3ac04dc4fb5249838",
+  "date": "2026-10-27",
   "notes": [
-    "Recent files on the home screen: reopen what you opened or saved, with previews",
-    "Tools: Save images is gone; use Save pages as pictures",
-    "From 1.8.1: Save pages as pictures (JPEG or PNG)"
+    "With 6 files open, opening another lets you tick which ones to close, then opens it",
+    "From 1.8.2: Recent files on the home screen"
   ]
 }
