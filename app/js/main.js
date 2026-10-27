@@ -16,7 +16,7 @@ import { scanPages } from "./scan.js";
 import { rememberFile, listRecent, recentFile, forgetRecent, clearRecent, when } from "./recent.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon } from "./ui.js";
 
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.8.3";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -150,10 +150,7 @@ function scanName() {
 }
 
 async function scanToNewTab() {
-  if (tabs.length >= MAX_TABS) {
-    toast(`Up to ${MAX_TABS} files can be open at once. Close one, then scan.`, { ms: 5000 });
-    return;
-  }
+  if (!(await makeRoom(1))) return;
   const files = await scanPages();
   if (!files.length) return;
   // A new scan isn't saved anywhere yet, so closing it asks first.
@@ -212,6 +209,13 @@ function findOpen(file) {
 async function openFiles(files, { combine = false, name = null, tab = null, unsaved = false } = {}) {
   // Several files from "Open a PDF" open side by side, one tab each.
   if (!combine && files.length > 1) {
+    let fresh = files.filter((f) => !findOpen(f));
+    if (fresh.length > MAX_TABS) {
+      toast(`Only ${MAX_TABS} files can be open at once, so the first ${MAX_TABS} are opening.`, { ms: 5000 });
+      fresh = fresh.slice(0, MAX_TABS);
+      files = files.filter((f) => findOpen(f) || fresh.includes(f));
+    }
+    if (!(await makeRoom(fresh.length))) return false;
     for (const f of files) {
       if (!(await openFiles([f], { combine: false }))) break;
     }
@@ -225,10 +229,7 @@ async function openFiles(files, { combine = false, name = null, tab = null, unsa
       return true;
     }
   }
-  if (tabs.length >= MAX_TABS) {
-    toast(`Up to ${MAX_TABS} files can be open at once. Close one, then try again.`, { ms: 5000 });
-    return false;
-  }
+  if (!(await makeRoom(1))) return false;
   const { loaded, problems } = await loadAll(files, { many: files.length > 1 });
   if (!loaded.length) {
     if (problems.length) confirmDialog({ title: "Couldn't open", message: problems.join("\n"), okText: "OK", cancelText: "" });
@@ -381,10 +382,108 @@ async function leaveDoc() {
 }
 
 function closeCurrent() {
-  if (!cur) return;
-  if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
-  closingTab = cur;
+  if (cur) closeTab(cur);
+}
+
+// Any file's Back step will do: they're interchangeable, and onClose drops closingTab.
+function closeTab(t) {
+  if (!tabs.includes(t)) return;
+  if (t === cur && cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
+  closingTab = t;
   closeLayer(docLayers[docLayers.length - 1]);
+}
+
+// Closes one file, asking first if it has unsaved changes. Resolves true once it's closed.
+function closeTabAsking(t) {
+  return new Promise((resolve) => {
+    const doc = t.doc;
+    if (!(doc.dirty && doc.pages.length)) {
+      closeTab(t);
+      resolve(true);
+      return;
+    }
+    activateTab(t);
+    choiceDialog({
+      title: "Save your changes?",
+      message: `“${doc.name}.pdf” has changes that aren't saved yet.`,
+      choices: [
+        { label: "Cancel", value: null },
+        { label: "Discard", value: "discard", kind: "danger-text" },
+        { label: "Save", value: "save", kind: "primary" }
+      ]
+    }).then((v) => {
+      if (!v) { resolve(false); return; }
+      if (v === "discard") {
+        doc.dirty = false;
+        closeTab(t);
+        resolve(true);
+        return;
+      }
+      // Save first; the file closes once it has been saved or shared.
+      openSaveSheet(doc, {
+        onSaved: () => updateDocUi(),
+        onClose: () => setTimeout(() => {
+          if (doc.dirty) { resolve(false); return; }
+          closeTab(t);
+          resolve(true);
+        }, 0)
+      });
+    });
+  });
+}
+
+/**
+ * Before opening `count` more files: if that's more than MAX_TABS in all, asks which open files
+ * to close. Resolves true when there's room (after closing them), false if you cancel.
+ */
+function makeRoom(count) {
+  const need = tabs.length + count - MAX_TABS;
+  if (need <= 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const picked = new Set();
+    let result = false;
+    const body = h(`<div>
+      <p class="room-msg">${need === 1 ? "Close one file:" : `Close ${need} files:`}</p>
+      <div class="room-list"></div>
+    </div>`);
+    const list = body.querySelector(".room-list");
+    const foot = h(`<div class="foot-row"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="button" data-done disabled>Done</button></div>`);
+    const doneBtn = foot.querySelector("[data-done]");
+    for (const t of tabs) {
+      const notes = [t === cur ? "On screen" : "", t.doc.dirty && t.doc.pages.length ? "Not saved" : ""].filter(Boolean).join(" · ");
+      const row = h(`<label class="room-row">
+        <input type="checkbox">
+        <span class="room-text"><b>${esc(t.doc.name)}.pdf</b>${notes ? `<small>${esc(notes)}</small>` : ""}</span>
+      </label>`);
+      row.querySelector("input").addEventListener("change", (e) => {
+        if (e.target.checked) picked.add(t); else picked.delete(t);
+        row.classList.toggle("on", e.target.checked);
+        doneBtn.disabled = picked.size < need;
+      });
+      list.appendChild(row);
+    }
+    const sheet = openSheet({
+      title: `Can't open more than ${MAX_TABS} files`,
+      body,
+      foot,
+      onClose: () => {
+        if (!result) { resolve(false); return; }
+        // Close the chosen files one after another (unsaved ones ask), then open the new one.
+        setTimeout(async () => {
+          for (const t of tabs.filter((x) => picked.has(x))) {
+            if (!(await closeTabAsking(t))) { resolve(false); return; }
+          }
+          resolve(tabs.length + count <= MAX_TABS);
+        }, 0);
+      }
+    });
+    foot.querySelector("[data-cancel]").addEventListener("click", () => sheet.close());
+    doneBtn.addEventListener("click", () => {
+      if (picked.size < need) return;
+      result = true;
+      sheet.close();
+    });
+  });
 }
 
 // Lets go of a closed file and shows the one before it, or the home screen after the last.
@@ -448,10 +547,6 @@ function renderTabs() {
 }
 
 async function openAnother(anchor) {
-  if (tabs.length >= MAX_TABS) {
-    toast(`Up to ${MAX_TABS} files can be open at once. Close one first.`, { ms: 5000 });
-    return;
-  }
   const v = await openMenu(anchor, [
     { label: "Open a PDF", value: "open", icon: "file" },
     { label: "Recent files", value: "recent", icon: "clock" },

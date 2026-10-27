@@ -899,7 +899,7 @@ export function formatSize(n) {
   return Math.max(1, Math.round(n / 1024)) + " KB";
 }
 
-export function openSaveSheet(doc, { pages = null, onSaved } = {}) {
+export function openSaveSheet(doc, { pages = null, onSaved, onClose } = {}) {
   const extract = !!pages;
   const list = pages || doc.pages;
   const readOnly = doc.readOnly;
@@ -975,7 +975,7 @@ export function openSaveSheet(doc, { pages = null, onSaved } = {}) {
     ${share ? `<button class="btn primary" type="button" data-go="share">${icon("share")}<span>Share</span></button>` : ""}
     <button class="btn ${share ? "" : "primary"}" type="button" data-go="download">${icon("download")}<span>Download</span></button>
   </div>`);
-  const sheet = openSheet({ title: extract ? "Extract pages" : "Save PDF", body, foot });
+  const sheet = openSheet({ title: extract ? "Extract pages" : "Save PDF", body, foot, onClose });
 
   let ready = null;
   function forget() {
