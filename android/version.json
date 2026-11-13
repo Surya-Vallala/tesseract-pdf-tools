@@ -1,13 +1,17 @@
 {
-  "version": "1.8.4",
-  "versionCode": 10804,
-  "file": "TesseractPDF-1.8.4.apk",
-  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.8.4.apk",
+  "version": "1.9.0",
+  "versionCode": 10900,
+  "file": "TesseractPDF-1.9.0.apk",
+  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.9.0.apk",
   "size_mb": 20.9,
-  "sha256": "ae7e4f125e08af14ef08bbe3c21f92891834296e3d819e51d7b0465c831c3198",
-  "date": "2026-11-02",
+  "sha256": "eaf60c855ca4c1697a4ddf223b07af40b1161f72bbed352600c52e796e4f5c40",
+  "date": "2026-11-13",
   "notes": [
-    "The Save button shows download and share icons",
-    "From 1.8.3: with 6 files open, choose which ones to close"
+    "Pictures: in Mark up, tap Picture to add a photo, a photo from the camera, or a page of a PDF",
+    "Drag a picture's corners to resize it, its sides to stretch it, the round handle to turn it; Crop and Turn are on its bar",
+    "Look: grey, black and white, remove white background (for signatures on paper), brightness, contrast, opacity",
+    "Border, flip, exact size and angle, reset, and make part of page are under More",
+    "Pictures open and save in the same format as the Windows app, so either app can edit them",
+    "The app now looks for updates once a day and asks before updating (you can turn this off in About)"
   ]
 }
