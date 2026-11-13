@@ -68,8 +68,9 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          ram-size: 4096M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated -no-snapshot
           script: |
             adb install -r apk/android/app/build/outputs/apk/debug/app-debug.apk
             node apk/test/emulator-test.mjs test-out

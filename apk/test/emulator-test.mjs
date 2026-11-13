@@ -22,6 +22,17 @@ const adb = (cmd) => {
   }
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The emulator's launcher sometimes stops responding while the machine is busy; its
+// "isn't responding" dialog would cover the app, so it's closed ("Wait") when it shows.
+const closeAnr = async () => {
+  for (let i = 0; i < 3; i++) {
+    const f = adb("shell dumpsys window | grep -E 'mCurrentFocus'");
+    if (!/Not Responding/i.test(f)) return;
+    adb("shell input keyevent 61"); // to the "Wait" button
+    adb("shell input keyevent 66");
+    await sleep(1500);
+  }
+};
 
 let device;
 try {
@@ -58,6 +69,7 @@ try {
   step("The app looks for an update by itself once a day", checkedAt > 0, { checkedAt, shown: autoUi });
 
   // Make two small PDFs inside the app and save them to Downloads the way the Save sheet does.
+  await closeAnr();
   const savedNames = await page.evaluate(async () => {
     await new Promise((res, rej) => {
       const s = document.createElement("script");
@@ -139,6 +151,7 @@ try {
 
   // Scan pages: Google's document scanner opens; closing it brings you back to the app.
   // (The window focus can read "null" for a moment, so the page being covered counts too.)
+  await closeAnr();
   await page.evaluate(() => { window.__hid = 0; document.addEventListener("visibilitychange", () => { if (document.hidden) window.__hid++; }); });
   await page.click("#btnScan");
   let scanFocus = "", covered = 0, builtIn = false;
@@ -161,6 +174,7 @@ try {
   step("Scan pages opens Google's document scanner", googleScanner && afterScan.home, { focus: scanFocus.trim(), covered, builtIn, afterScan });
 
   // Share menu opens, and closing it reports "cancelled" to the app.
+  await closeAnr();
   await page.evaluate(() => {
     window.__shareResult = "pending";
     import("./js/platform.js")
@@ -176,6 +190,7 @@ try {
   step("Share opens Android's share menu and closing it is understood", /chooser|resolver|ChooserActivity|intentresolver/i.test(focus) && shareResult === "cancelled", { focus: focus.trim(), shareResult });
 
   // Check for updates, as the person would: About, Check now.
+  await closeAnr();
   await page.click("#btnAbout");
   await sleep(800);
   await device.screenshot({ path: `${OUT}/5-about-updates.png` });
