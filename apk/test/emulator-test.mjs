@@ -138,23 +138,27 @@ try {
   }
 
   // Scan pages: Google's document scanner opens; closing it brings you back to the app.
+  // (The window focus can read "null" for a moment, so the page being covered counts too.)
+  await page.evaluate(() => { window.__hid = 0; document.addEventListener("visibilitychange", () => { if (document.hidden) window.__hid++; }); });
   await page.click("#btnScan");
-  let scanFocus = "";
+  let scanFocus = "", covered = 0, builtIn = false;
   for (let i = 0; i < 40; i++) {
     await sleep(1000);
     scanFocus = adb("shell dumpsys window | grep -E 'mCurrentFocus'");
-    if (!scanFocus.includes(PKG) && scanFocus.trim()) break;
-    const builtIn = await page.evaluate(() => !!document.querySelector(".scanner")).catch(() => false);
-    if (builtIn) { scanFocus = "built-in scanner"; break; }
+    if (!scanFocus.includes(PKG) && /gms|mlkit|documentscanner/i.test(scanFocus)) break;
+    builtIn = await page.evaluate(() => !!document.querySelector(".scanner")).catch(() => false);
+    if (builtIn) break;
+    covered = await page.evaluate(() => window.__hid).catch(() => 0);
+    if (covered && i >= 4) break;
   }
   await sleep(3000);
   await device.screenshot({ path: `${OUT}/3b-scanner.png` });
-  const googleScanner = /gms|mlkit|documentscanner/i.test(scanFocus);
+  const googleScanner = !builtIn && (/gms|mlkit|documentscanner/i.test(scanFocus) || covered > 0);
   adb("shell input keyevent 4");
   await sleep(2500);
-  if (!googleScanner) { adb("shell input keyevent 4"); await sleep(1500); }
+  if (await page.evaluate(() => !!document.querySelector(".scanner")).catch(() => false)) { adb("shell input keyevent 4"); await sleep(1500); }
   const afterScan = await docState();
-  step("Scan pages opens Google's document scanner", googleScanner && afterScan.home, { focus: scanFocus.trim(), afterScan });
+  step("Scan pages opens Google's document scanner", googleScanner && afterScan.home, { focus: scanFocus.trim(), covered, builtIn, afterScan });
 
   // Share menu opens, and closing it reports "cancelled" to the app.
   await page.evaluate(() => {
