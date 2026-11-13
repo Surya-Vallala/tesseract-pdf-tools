@@ -1,16 +1,16 @@
 {
-  "version": "1.6.3",
-  "file": "TesseractPDFTools-Setup-1.6.3.exe",
-  "size_mb": 30.3,
-  "sha256": "fc2a4fa85720c8d61d6f4a690e9eefae25d4e9a6681124410f4593459ecf924a",
-  "date": "2026-10-10",
+  "version": "1.7.0",
+  "file": "TesseractPDFTools-Setup-1.7.0.exe",
+  "size_mb": 30.4,
+  "sha256": "44c2fb5a259450891fba4d622885405caf747dae04ec59cd40d8ce3a45bdcb99",
+  "date": "2026-11-13",
   "notes": [
-    "A new start screen: recent files as first-page previews, with when each was opened; right-click one to show it in its folder or remove it",
-    "About, as on the phone: click \"Developed by\" (or Help → About) to email Tesseract Studio with suggestions or questions",
-    "The app icon is the red TT mark again (1.6.2 showed a different one by mistake)",
-    "From 1.6.2: the new TESSERACT logo",
-    "From 1.6: Blocks (A) drawn to the sheet's scale, from beds and sofas to doors, stairs and cars",
-    "From 1.6: hold the pen still at the end of a stroke to make a clean line, box, circle or polygon; the pen's eraser end rubs out",
-    "From 1.6: Split into Files, move pages to the start or end, Reduce File Size presets"
+    "Pictures: Insert → Picture… (Ctrl+Shift+P) puts a photo, scan, logo, signature or a page of a PDF on the page; right-click the page for Insert Picture Here",
+    "Drag a picture's corners to scale it (Shift: freely), its sides to stretch it, Ctrl + a side to skew it, the round handle to turn it",
+    "The picture bar: opacity, crop (or double-click the picture), skew, flip, turn, grey or black and white, remove white background, brightness and contrast, border, exact size, reset, make part of page",
+    "Pictures added on the phone open here ready to edit, and the other way round; they look the same in any PDF viewer",
+    "Checks for a new version once a day and asks before updating (Help → Check for Updates Daily turns it off)",
+    "From 1.6.4: the side panel folds into a slim strip of icons (the button at the end of its tabs, or F4), and stays the way you left it",
+    "Fixed: the round turn handle of a selected drawing could leave a trace on the page after a resize"
   ]
 }
