@@ -201,6 +201,7 @@ export class Doc {
     this.sources = new Map();
     this.pages = [];
     this.layers = [];          // your drawing layers: { id, name, visible }
+    this.pics = new Map();     // pictures on the pages: hash -> { blob, type, pw, ph } (pics.js)
     this.activeLayer = null;
     this.watermark = null;
     this.password = null;      // password the saved PDF gets

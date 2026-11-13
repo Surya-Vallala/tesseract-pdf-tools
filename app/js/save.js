@@ -4,7 +4,8 @@ import { libDoc, baseName, FULL, imagePageSize } from "./doc.js";
 import { cropUserRect } from "./render.js";
 import { pageGeom, mul, inv, apply, rot } from "./geom.js";
 import { drawableFor, hexToRgb, PEN_KIND, SHAPE_NAMES } from "./shapes.js";
-import { toDesk, asciiJSON, DRAW_KEY, SKETCH_KEY, SCALE_KEY, FILE_KEY, GROUP_LABEL } from "./interop.js";
+import { toDesk, asciiJSON, DRAW_KEY, SKETCH_KEY, SCALE_KEY, FILE_KEY, GROUP_LABEL, IMG_KEY, HASH_KEY } from "./interop.js";
+import { settingsOf, frameOf, changesPixels, originalForPdf, processedForPdf, deflate } from "./pics.js";
 import { wmAppliesTo, wmLayout } from "./watermark.js";
 import { filterContent } from "./contentfilter.js";
 import { engine } from "./engine.js";
@@ -332,7 +333,123 @@ function hexOfAscii(text) {
 
 const SUBJ = { pen: "Pen", marker: "Marker", highlighter: "Highlighter" };
 
-async function addDrawing(B, leaf, pageRef, item, g, m, ocRef, author) {
+/* ---------- pictures ---------- */
+
+const f5 = (v) => (Math.abs(v) < 1e-9 ? "0" : String(+v.toFixed(5)));
+
+/** A PDF image object: JPEG bytes as they are, or pixels (with a soft mask for see-through parts). */
+async function imageObject(B, o, extra = {}) {
+  const { PDFRawStream } = window.PDFLib;
+  const { ctx } = B;
+  if (o.jpeg) {
+    const c = o.info.comps;
+    const d = { Type: "XObject", Subtype: "Image", Width: o.info.w, Height: o.info.h, ColorSpace: c === 1 ? "DeviceGray" : c === 4 ? "DeviceCMYK" : "DeviceRGB",
+      BitsPerComponent: 8, Filter: "DCTDecode", Length: o.jpeg.length, ...extra };
+    if (c === 4 && o.info.adobe) d.Decode = [1, 0, 1, 0, 1, 0, 1, 0];
+    return ctx.register(PDFRawStream.of(ctx.obj(d), o.jpeg));
+  }
+  let smask = null;
+  if (o.alpha) {
+    const a = await deflate(o.alpha);
+    smask = ctx.register(PDFRawStream.of(ctx.obj({ Type: "XObject", Subtype: "Image", Width: o.w, Height: o.h, ColorSpace: "DeviceGray", BitsPerComponent: 8, Filter: "FlateDecode", Length: a.length }), a));
+  }
+  const c = await deflate(o.color);
+  const d = { Type: "XObject", Subtype: "Image", Width: o.w, Height: o.h, ColorSpace: o.gray ? "DeviceGray" : "DeviceRGB", BitsPerComponent: 8, Filter: "FlateDecode", Length: c.length, ...extra };
+  if (smask) d.SMask = smask;
+  return ctx.register(PDFRawStream.of(ctx.obj(d), c));
+}
+
+/** The original picture in the new file, once however often it is used: the copy in the file it came from, else made. */
+async function originalRef(B, hash, src) {
+  if (B.picRefs.has(hash)) return B.picRefs.get(hash);
+  const { PDFRef, PDFString } = window.PDFLib;
+  let ref = null;
+  const from = [src, ...[...B.states.values()].map((x) => x.s)].filter((x) => x && x.picRefs && x.picRefs.has(hash));
+  for (const s of from) {
+    const st = B.states.get(s.id);
+    if (!st || !st.copier) continue;
+    try {
+      const r = st.copier.copy(refFromId(s.picRefs.get(hash)));
+      if (r instanceof PDFRef) { ref = r; break; }
+    } catch (e) { /* made below */ }
+  }
+  if (!ref) ref = await imageObject(B, await originalForPdf(B.doc, hash), { [HASH_KEY]: PDFString.of(hash) });
+  B.picRefs.set(hash, ref);
+  return ref;
+}
+
+/** Drawing instructions for a picture (base -> PDF transform m), and its box on the page. */
+async function picOps(B, R, it, m, src) {
+  const s = settingsOf(it);
+  const F = mul(m, frameOf(it));
+  const w = Math.max(0.5, it.w), h = Math.max(0.5, it.h);
+  // the original is kept for editing later; a picture made part of the page with a changed look doesn't need it
+  const ox = it.flat && changesPixels(s) ? null : await originalRef(B, s.hash, src);
+  let ix = ox, place, clip = "";
+  if (changesPixels(s)) {
+    const key = `${s.hash}|${s.crop.join(",")}|${s.look}|${s.white}|${s.bright}|${s.contrast}`;
+    if (!B.lookRefs.has(key)) B.lookRefs.set(key, processedForPdf(B.doc, s).then((o) => imageObject(B, o)));
+    ix = await B.lookRefs.get(key);
+    place = `${f5(w)} 0 0 ${f5(-h)} ${f5(-w / 2)} ${f5(h / 2)} cm`;
+  } else {
+    const [l, t, r, b] = s.crop;
+    const fw = w / Math.max(0.05, 1 - l - r), fh = h / Math.max(0.05, 1 - t - b);
+    const x0 = -w / 2 - l * fw, y0 = -h / 2 - t * fh;
+    place = `${f5(fw)} 0 0 ${f5(-fh)} ${f5(x0)} ${f5(y0 + fh)} cm`;
+    clip = `${f5(-w / 2)} ${f5(-h / 2)} ${f5(w)} ${f5(h)} re W n `;
+  }
+  const flip = s.flip[0] || s.flip[1] ? `${s.flip[0] ? -1 : 1} 0 0 ${s.flip[1] ? -1 : 1} 0 0 cm ` : "";
+  const op = it.opacity == null ? 1 : it.opacity;
+  let o = "q\n";
+  if (op < 0.999) o += `${R.gs(+op.toFixed(3), +op.toFixed(3), false)} gs\n`;
+  o += `${F.map(f5).join(" ")} cm\n`;
+  o += `q ${clip}${flip}${place} ${R.xobj(ix)} Do Q\n`;
+  let bw = 0;
+  if (s.border && it.width > 0) {
+    bw = it.width;
+    o += `q ${rgbStr(it.color || "#1F2328")} RG ${f5(bw)} w 0 j [] 0 d ${f5(-w / 2)} ${f5(-h / 2)} ${f5(w)} ${f5(h)} re S Q\n`;
+  }
+  o += "Q\n";
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]) {
+    const q = apply(F, x, y);
+    x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]);
+  }
+  const pad = bw * Math.sqrt(Math.abs(F[0] * F[3] - F[1] * F[2])) + 0.5;
+  return { ops: o, rect: [x0 - pad, y0 - pad, x1 + pad, y1 + pad], orig: ox };
+}
+
+/** A picture as an annotation on its drawing layer, which either app can edit later. */
+async function addPicture(B, leaf, pageRef, item, m, ocRef, author, src) {
+  const { PDFHexString, PDFString, PDFName } = window.PDFLib;
+  const { ctx } = B;
+  const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+  const apRes = ctx.obj({});
+  const { ops, rect, orig } = await picOps(B, new Res(B, apRes), item, m, src);
+  const ap = ctx.register(ctx.flateStream(ops, { Type: "XObject", Subtype: "Form", BBox: rect, Resources: apRes }));
+  const now = pdfDate(Date.now());
+  const dj = toDesk(item, { b2p: m, pt: 1 / scale, author, now });
+  const o = {
+    Type: "Annot", Subtype: "Stamp", Name: "TPTPicture", Rect: rect, F: 4, P: pageRef,
+    NM: PDFString.of("tpt-" + dj.id),
+    CreationDate: PDFString.of(dj.created || now),
+    M: PDFString.of(now),
+    T: PDFHexString.fromText(dj.author || ""),
+    Subj: PDFHexString.fromText("Picture"),
+    C: hexToRgb(dj.color),
+    BS: { W: dj.width, S: "S" },
+    CA: dj.opacity,
+    AP: { N: ap }
+  };
+  if (ocRef) o.OC = ocRef;
+  const dict = ctx.obj(o);
+  dict.set(PDFName.of(IMG_KEY), orig);
+  dict.set(PDFName.of(DRAW_KEY), PDFHexString.of(hexOfAscii(asciiJSON(dj))));
+  leaf.addAnnot(ctx.register(dict));
+}
+
+async function addDrawing(B, leaf, pageRef, item, g, m, ocRef, author, src) {
+  if (item.kind === "pic") return addPicture(B, leaf, pageRef, item, m, ocRef, author, src);
   const { PDFHexString, PDFString } = window.PDFLib;
   const { ctx } = B;
   const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
@@ -394,6 +511,7 @@ function dropOldDrawings(ctx, leaf, imported, doc) {
   const annots = leaf.lookupMaybe(PDFName.of("Annots"), PDFArray);
   if (!annots) return;
   const keep = annots.asArray().filter((r) => {
+    if (r === window.PDFLib.PDFNull) return false; // a drawing the phone writes again (not copied)
     const a = ctx.lookupMaybe(r, PDFDict);
     if (!a || !a.get(PDFName.of(DRAW_KEY))) return true;
     let nm = "";
@@ -567,7 +685,8 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
   const { PDFDocument, PDFName, PDFNumber, PDFArray, PDFDict, PDFNull, PDFObjectCopier, PDFPage, PDFHexString, PDFString, PDFRef, StandardFonts, degrees } = L;
   const out = await PDFDocument.create({ updateMetadata: false });
   const ctx = out.context;
-  const B = { out, ctx, helv: await out.embedFont(StandardFonts.Helvetica), helvB: await out.embedFont(StandardFonts.HelveticaBold), glyphless: null };
+  const B = { out, ctx, helv: await out.embedFont(StandardFonts.Helvetica), helvB: await out.embedFont(StandardFonts.HelveticaBold), glyphless: null,
+    doc, states: null, picRefs: new Map(), lookRefs: new Map() };
   const visibleOnly = layers === "visible";
   const states = new Map();
   const used = [];
@@ -586,9 +705,12 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
     for (const p of pages) if (p.src === s.id && !st.newRefs.has(p.index)) st.newRefs.set(p.index, ctx.nextRef());
     const tm = st.copier.traversedObjects;
     for (const r of pageTreeRefs(st.lib)) tm.set(r, PDFNull);
+    // drawings the phone took over are written again from your marks: not copied (pictures would be twice)
+    if (s.hiddenAnnots) for (const a of s.hiddenAnnots.keys()) { const r = refFromId(a); if (r) tm.set(r, PDFNull); }
     st.srcPages.forEach((pg, i) => tm.set(pg.ref, st.newRefs.get(i) || PDFNull));
     st.hiddenOut = new Set();
   }
+  B.states = states;
 
   const visited = new Set();
   const photoCache = new Map();
@@ -685,8 +807,9 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
     const g = pageGeom(doc, p);
     const ocr = s.ocr && s.ocr[p.index];
     const wantsWM = doc.watermark && wmAppliesTo(doc.watermark, p.key);
-    const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape") && (!visibleOnly || drawLayerVisible.get(it.layer) !== false));
-    if (marks.length || wantsWM || (ocr && ocr.words.length) || (comments && p.items.some((it) => it.kind === "comment"))) {
+    const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape" || (it.kind === "pic" && !it.flat)) && (!visibleOnly || drawLayerVisible.get(it.layer) !== false));
+    const flat = p.items.filter((it) => it.kind === "pic" && it.flat);
+    if (marks.length || flat.length || wantsWM || (ocr && ocr.words.length) || (comments && p.items.some((it) => it.kind === "comment"))) {
       leaf.normalize();
       const R = new Res(B, leaf.lookup(PDFName.of("Resources"), PDFDict));
       let ops = "";
@@ -702,11 +825,13 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
           ops += await watermarkOps(B, R, doc.watermark, d2u, g.dw, g.dh);
         }
       }
+      // pictures made part of the page
+      for (const it of flat) ops += (await picOps(B, R, it, m, s)).ops;
       // your drawings: annotations on their layers, which either app can edit later
       const author = settings.get("author", "");
       for (const it of marks) {
         usedLayers.add(it.layer);
-        await addDrawing(B, leaf, page.ref, it, g, m, layerRef(it.layer), author);
+        await addDrawing(B, leaf, page.ref, it, g, m, layerRef(it.layer), author, s);
       }
       if (ocr && ocr.words.length) {
         const om = mul(m, inv(rot(ocr.R || 0, g.W, g.H)));
@@ -905,7 +1030,7 @@ export function openSaveSheet(doc, { pages = null, onSaved, onClose } = {}) {
   const readOnly = doc.readOnly;
   const share = canShareFiles();
   const hasPdfLayers = list.some((p) => doc.src(p).oc);
-  const hasMyLayers = list.some((p) => p.items.some((it) => it.kind === "ink" || it.kind === "shape"));
+  const hasMyLayers = list.some((p) => p.items.some((it) => it.kind === "ink" || it.kind === "shape" || (it.kind === "pic" && !it.flat)));
   const hasComments = list.some((p) => p.items.some((it) => it.kind === "comment"));
   const hasBlur = list.some((p) => p.items.some((it) => it.kind === "blur"));
   const hasPhotos = list.some((p) => doc.src(p).kind === "image");

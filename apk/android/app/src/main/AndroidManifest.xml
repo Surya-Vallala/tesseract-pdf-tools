@@ -69,4 +69,11 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- The small buzz when you pick up a page or a shape -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- "Take a photo" for a picture opens the camera app (Android 11 and later must be told) -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 </manifest>

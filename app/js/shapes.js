@@ -3,6 +3,7 @@
 
 import { blockParts } from "./blocks.js";
 import { mul, apply } from "./geom.js";
+import { picBounds } from "./pics.js";
 import { LINE_KINDS, BOX_KINDS, lineParts, boxParts, layoutText } from "./dgeom.js";
 export { LINE_KINDS, BOX_KINDS };
 
@@ -373,6 +374,7 @@ export function commentAnchor(it) {
 
 // Bounding box of any item (base units), used for selection and hit tests.
 export function itemBounds(it, unit, pt = 1) {
+  if (it.kind === "pic") return picBounds(it);
   let pts;
   if (it.kind === "ink") pts = it.pts;
   else if (it.kind === "blur") pts = [it.x0, it.y0, it.x1, it.y1];

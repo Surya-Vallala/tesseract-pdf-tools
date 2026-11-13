@@ -17,6 +17,8 @@ import {
   blockPicker, rememberBlock, findScale, openScaleSheet, sizeChoices, parseSizeText, familyOf, ratioForK, getUnits, setUnits,
   addMyBlock, myTile
 } from "./blockui.js";
+import { isPic, picCorners, picBounds, hitPic, toBox, resized, withCrop, fullBox, settingsOf as picSettings, turned, picAngle, shiftPic } from "./pics.js";
+import { openPictureMenu, appendPicOptions, turnPic, startCrop, showCropLive } from "./picui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
 // Lines and arrows are edited by their ends; every other shape is a box that can be turned.
@@ -81,6 +83,8 @@ export class Markup {
   }
 
   exit() {
+    if (this.cropping) closeLayer(this.cropping.layer);
+    if (this.panel) closeLayer(this.panel.layer);
     this.cancelGesture();
     this.select(null);
     this.closeComposer();
@@ -107,6 +111,10 @@ export class Markup {
   setTool(tool, { fromBar = false } = {}) {
     if (tool === "shapes" && fromBar) {
       this.openShapes();
+      return;
+    }
+    if (tool === "picture") {
+      openPictureMenu(this);
       return;
     }
     if (this.tool !== tool && tool !== "select" && !(tool === "shapes" && this.sel)) this.select(null);
@@ -198,6 +206,8 @@ export class Markup {
         o.appendChild(h(`<p class="opt-note">Tap a mark to select it. Drag empty space to move around.</p>`));
       } else if (isBlock(selItem)) {
         this.appendBlockOptions(o, selItem);
+      } else if (isPic(selItem)) {
+        appendPicOptions(this, o, selItem);
       } else if (selItem.kind === "ink" || selItem.kind === "shape") {
         if (selItem.kind === "ink") {
           const pal = selItem.pen === "highlighter" ? HIGHLIGHT_COLORS : PEN_COLORS;
@@ -755,6 +765,7 @@ export class Markup {
   }
 
   select(sel) {
+    if (this.cropping && (!sel || sel.id !== this.cropping.id)) closeLayer(this.cropping.layer);
     this.sel = sel;
     this.drawSelection();
     if (this.active) this.renderOptions();
@@ -793,7 +804,12 @@ export class Markup {
     const er = vit.el.getBoundingClientRect();
     const toWrap = (c) => [c[0] - er.left + vit.left, c[1] - er.top + vit.top];
     let pillY = T + H + 8;
-    if (isBlock(item)) {
+    if (isPic(item)) {
+      // the picture's own outline (turned or slanted), or the part kept while cropping
+      const cs = picCorners(item).map(([x, y]) => toWrap(this.viewer.toClient(vit, x, y)));
+      ui.appendChild(h(`<svg class="sel-poly" aria-hidden="true"><path d="M${cs.map((c) => c.map((v) => v.toFixed(1)).join(" ")).join("L")}Z"/></svg>`));
+      pillY = Math.max(...cs.map((c) => c[1])) + 10;
+    } else if (isBlock(item)) {
       const m = blockMatrix(item);
       const cs = [[0, 0], [item.bw, 0], [item.bw, item.bd], [0, item.bd]].map(([x, y]) => toWrap(this.viewer.toClient(vit, ...apply(m, x, y))));
       const bw = Math.hypot(cs[1][0] - cs[0][0], cs[1][1] - cs[0][1]), bh = Math.hypot(cs[3][0] - cs[0][0], cs[3][1] - cs[0][1]);
@@ -808,7 +824,14 @@ export class Markup {
     }
     for (const hd of this.handlesFor(item, vit)) {
       const [x, y] = toWrap([hd.x, hd.y]);
-      ui.appendChild(h(`<span class="handle${hd.k === "rot" ? " rot" : ""}" style="left:${x}px;top:${y}px">${hd.k === "rot" ? icon("turn") : ""}</span>`));
+      const side = hd.k.startsWith("ps-") || hd.k.startsWith("k-");
+      ui.appendChild(h(`<span class="handle${hd.k === "rot" ? " rot" : ""}${side ? " side" : ""}${hd.k[0] === "k" ? " crop" : ""}" style="left:${x}px;top:${y}px">${hd.k === "rot" ? icon("turn") : ""}</span>`));
+    }
+    if (this.cropping) {
+      // cropping: no bar on the page, the panel below has Done
+      this.viewer.wrap.appendChild(ui);
+      this.selUI = ui;
+      return;
     }
     const bar = h(`<div class="floatbar" role="toolbar" aria-label="Selected mark"></div>`);
     const add = (ic, label, fn, danger) => {
@@ -822,15 +845,18 @@ export class Markup {
       bar.appendChild(sb);
       add("turn", "Turn", () => this.editSelected((x) => { x.rot = ((x.rot || 0) + 90) % 360; }));
       add("flip", "Flip", () => this.editSelected((x) => { x.flip = !x.flip; }));
+    } else if (isPic(item)) {
+      add("crop", "Crop", () => startCrop(this));
+      add("turn", "Turn", () => turnPic(this));
     } else if (item.kind === "shape" && (LABEL_KINDS.has(item.shape) || item.shape === "north")) add("text", "Edit text", () => this.editText(item));
     if (item.kind === "comment") add("edit", "Edit", () => this.onComment && this.onComment("edit", this.sel.key, item.id));
     if (item.kind !== "comment" && item.kind !== "blur") add("copy", "Copy", () => this.duplicateSelected());
     add("trash", "Delete", () => this.deleteSelected(), true);
-    bar.classList.toggle("labels", isBlock(item));
+    bar.classList.toggle("labels", isBlock(item) || isPic(item));
     const top = T - 52;
     // shapes that can be turned have their turn handle above them: the bar goes below
-    const turnable = item.kind === "shape" && !POINT_SHAPES.has(item.shape) && item.shape !== "poly";
-    bar.style.top = (isBlock(item) ? pillY : turnable || top < this.viewer.root.scrollTop + 4 ? T + H + 8 : top) + "px";
+    const turnable = (item.kind === "shape" && !POINT_SHAPES.has(item.shape) && item.shape !== "poly") || isPic(item);
+    bar.style.top = (isBlock(item) || isPic(item) ? pillY : turnable || top < this.viewer.root.scrollTop + 4 ? T + H + 8 : top) + "px";
     ui.appendChild(bar);
     this.viewer.wrap.appendChild(ui);
     const bw = bar.offsetWidth;
@@ -845,6 +871,7 @@ export class Markup {
   // Handles in client coordinates: corners for boxes, ends for arrows and symbols.
   handlesFor(item, vit) {
     const pts = [];
+    if (isPic(item)) return this.picHandles(item, vit);
     if (isBlock(item)) {
       const { ux, uy, vx, vy } = this.blockFrame(item);
       const hw = (item.bw / 2) * item.k, hd = (item.bd / 2) * item.k;
@@ -874,6 +901,95 @@ export class Markup {
       pts.push({ k: "tip", b: [item.ax, item.ay] });
     }
     return pts.map((p) => { const c = this.viewer.toClient(vit, ...p.b); return { k: p.k, x: c[0], y: c[1] }; });
+  }
+
+  // A picture's handles (client coordinates): corners scale it, sides stretch it, the round one turns it.
+  // While cropping: the edges and corners of the part that stays.
+  picHandles(item, vit) {
+    const cs = picCorners(item).map(([x, y]) => this.viewer.toClient(vit, x, y));
+    const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const len = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const out = [];
+    const crop = !!this.cropping;
+    const pre = crop ? "k" : "pc";
+    [["00", 0], ["10", 1], ["11", 2], ["01", 3]].forEach(([k, i]) => out.push({ k: pre + k, x: cs[i][0], y: cs[i][1] }));
+    const sides = [["t", 0, 1], ["r", 1, 2], ["b", 2, 3], ["l", 3, 0]];
+    for (const [k, i, j] of sides) {
+      if (!crop && len(cs[i], cs[j]) < 72) continue; // small on screen: corners only
+      const [x, y] = mid(cs[i], cs[j]);
+      out.push({ k: (crop ? "k-" : "ps-") + k, x, y });
+    }
+    if (!crop) {
+      const c = mid(cs[0], cs[2]), t = mid(cs[0], cs[1]);
+      let dx = t[0] - c[0], dy = t[1] - c[1];
+      const d = Math.hypot(dx, dy) || 1;
+      dx /= d; dy /= d;
+      out.push({ k: "rot", x: t[0] + dx * 34, y: t[1] + dy * 34 });
+    }
+    return out;
+  }
+
+  // Moving, resizing, turning and cropping a picture (g.orig is the picture when the touch began).
+  editPic(g, item, bx, by) {
+    const o = g.orig;
+    const mode = g.mode;
+    let n = null;
+    if (mode === "move") {
+      n = structuredClone(o);
+      shiftPic(n, bx - g.b0[0], by - g.b0[1]);
+    } else if (mode === "rot") {
+      const cx = o.m[4], cy = o.m[5];
+      const d = ((Math.atan2(by - cy, bx - cx) - Math.atan2(g.b0[1] - cy, g.b0[0] - cx)) * 180) / Math.PI;
+      const vit = this.viewer.itemFor(this.sel.key);
+      const R = vit ? this.viewer.geom(vit).R : 0;
+      let a = (((picAngle(o) + d + R) % 360) + 360) % 360; // as shown
+      const q90 = Math.round(a / 90) * 90, q15 = Math.round(a / 15) * 15;
+      if (Math.abs(a - q90) < 6) a = q90;
+      else if (Math.abs(a - q15) < 3) a = q15;
+      n = turned(o, a - R - picAngle(o));
+    } else if (mode.startsWith("pc")) {
+      // a corner: the picture keeps its proportions, the opposite corner stays put
+      const sx = mode[2] === "1" ? 1 : -1, sy = mode[3] === "1" ? 1 : -1;
+      const [lx, ly] = toBox(o, bx, by);
+      const w = o.w, hh = o.h;
+      const ox = (-sx * w) / 2, oy = (-sy * hh) / 2;
+      let k = ((lx - ox) * sx * w + (ly - oy) * sy * hh) / (w * w + hh * hh);
+      k = Math.max(k, 0.03);
+      const ex = ox + sx * k * w, ey = oy + sy * k * hh;
+      n = resized(o, Math.min(ox, ex), Math.min(oy, ey), Math.max(ox, ex), Math.max(oy, ey));
+    } else if (mode.startsWith("ps-")) {
+      // a side: stretched one way, the opposite side stays put
+      const [lx, ly] = toBox(o, bx, by);
+      let x0 = -o.w / 2, x1 = o.w / 2, y0 = -o.h / 2, y1 = o.h / 2;
+      const side = mode[3];
+      if (side === "l") x0 = Math.min(lx, x1 - 2);
+      else if (side === "r") x1 = Math.max(lx, x0 + 2);
+      else if (side === "t") y0 = Math.min(ly, y1 - 2);
+      else y1 = Math.max(ly, y0 + 2);
+      n = resized(o, x0, y0, x1, y1);
+    } else if (mode[0] === "k") {
+      // cropping: which part of the original stays (in the original's own left/right, top/bottom)
+      const s = picSettings(o);
+      let [lx, ly] = toBox(o, bx, by);
+      if (s.flip[0]) lx = -lx;
+      if (s.flip[1]) ly = -ly;
+      const [X0, Y0, X1, Y1] = fullBox(o);
+      const FW = X1 - X0, FH = Y1 - Y0;
+      const c = s.crop.slice();
+      let sides = mode[1] === "-" ? mode[2] : (mode[1] === "0" ? "l" : "r") + (mode[2] === "0" ? "t" : "b");
+      if (s.flip[0]) sides = sides.replace(/[lr]/g, (x) => (x === "l" ? "r" : "l"));
+      if (s.flip[1]) sides = sides.replace(/[tb]/g, (x) => (x === "t" ? "b" : "t"));
+      const cl = (v, hi) => Math.max(0, Math.min(hi, v));
+      if (sides.includes("l")) c[0] = cl((lx - X0) / FW, 1 - c[2] - 0.02);
+      if (sides.includes("r")) c[2] = cl((X1 - lx) / FW, 1 - c[0] - 0.02);
+      if (sides.includes("t")) c[1] = cl((ly - Y0) / FH, 1 - c[3] - 0.02);
+      if (sides.includes("b")) c[3] = cl((Y1 - ly) / FH, 1 - c[1] - 0.02);
+      n = withCrop(o, c);
+    }
+    if (!n) return;
+    for (const k of Object.keys(item)) if (!(k in n)) delete item[k];
+    Object.assign(item, n);
+    if (this.cropping) showCropLive(this);
   }
 
   async editText(item) {
@@ -934,9 +1050,11 @@ export class Markup {
     const items = vit.p.items;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if ((it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) === false) continue;
+      if ((it.kind === "ink" || it.kind === "shape" || it.kind === "pic") && vis.get(it.layer) === false) continue;
       if (it.kind === "comment" && (!includeComments || !doc.commentsVisible)) continue;
-      if (it.kind === "ink") {
+      if (isPic(it)) {
+        if (!it.flat && hitPic(it, bx, by, tol * 0.5)) return it;
+      } else if (it.kind === "ink") {
         if (distToPolyline(bx, by, it.pts) <= tol + it.w / 2) return it;
       } else if (it.kind === "shape" && POINT_SHAPES.has(it.shape)) {
         if (distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= tol + it.w) return it;
@@ -975,10 +1093,21 @@ export class Markup {
       const [lx, ly] = apply(inv(blockMatrix(item)), bx, by);
       inside = lx >= 0 && lx <= item.bw && ly >= 0 && ly <= item.bd;
     }
+    // a picture: a touch well inside it moves it, unless it's on a handle of a big picture
+    let picInside = false;
+    if (isPic(item) && !this.cropping) {
+      const [bx, by] = this.viewer.toBase(vit, e.clientX, e.clientY);
+      const [lx, ly] = toBox(item, bx, by);
+      const k = this.viewer.basePerPx(vit);
+      const F = Math.hypot(item.m[0], item.m[1]) || 1;
+      const edge = (18 * k) / F; // 18 px, in the box's units
+      picInside = Math.abs(lx) < item.w / 2 - edge && Math.abs(ly) < item.h / 2 - edge;
+    }
     let best = null, bd = 22;
     for (const hd of this.handlesFor(item, vit)) {
       const d = Math.hypot(e.clientX - hd.x, e.clientY - hd.y);
       if (inside && hd.k !== "rot") continue;
+      if (picInside && hd.k !== "rot") continue;
       if (d < bd) { bd = d; best = hd.k; }
     }
     return best;
@@ -1010,6 +1139,13 @@ export class Markup {
       return this.capture(e);
     }
 
+    // Cropping a picture: its crop handles, anything else scrolls.
+    if (this.cropping) {
+      const hk = this.sel && this.sel.key === vit.p.key && !fingerScrolls ? this.hitHandle(e) : null;
+      if (hk) { this.startEdit(base, this.selectedItem(), hk); return this.capture(e); }
+      this.g = { ...base, type: "pan" };
+      return this.capture(e);
+    }
     // In the select and shapes tools, a selected mark can be moved or resized.
     if ((tool === "select" || tool === "shapes" || tool === "comment") && this.sel && this.sel.key === vit.p.key && !fingerScrolls) {
       const hk = this.hitHandle(e);
@@ -1192,6 +1328,7 @@ export class Markup {
       if (g.committed) this.changed();
       else if (!moved && this.tool === "select") this.drawSelection();
     }
+    if (this.cropping) showCropLive(this);
   }
 
   cancelGesture() {
@@ -1281,7 +1418,7 @@ export class Markup {
     const out = [];
     let changed = false;
     for (const it of vit.p.items) {
-      if (it.kind === "comment" || ((it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) === false)) { out.push(it); continue; }
+      if (it.kind === "comment" || it.kind === "pic" || ((it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) === false)) { out.push(it); continue; }
       let hit = false;
       if (it.kind === "ink") hit = distToPolyline(bx, by, it.pts) <= r + it.w / 2;
       else if (it.kind === "shape" && POINT_SHAPES.has(it.shape)) hit = distToSeg(bx, by, it.x1, it.y1, it.x2, it.y2) <= r + it.w;
@@ -1313,7 +1450,9 @@ export class Markup {
     if (!g.committed) { this.doc.commit(); g.committed = true; }
     const dx = bx - g.b0[0], dy = by - g.b0[1];
     const o = g.orig;
-    if (g.mode === "move") {
+    if (isPic(item)) {
+      this.editPic(g, item, bx, by);
+    } else if (g.mode === "move") {
       Object.assign(item, structuredClone(o));
       shiftItem(item, dx, dy);
     } else if (isBlock(item) && g.mode === "rot") {
@@ -1479,7 +1618,8 @@ function arrowHead(w, gg) {
 }
 
 export function shiftItem(it, dx, dy) {
-  if (it.kind === "ink" || (it.kind === "comment" && it.ctype === "free")) {
+  if (it.kind === "pic") shiftPic(it, dx, dy);
+  else if (it.kind === "ink" || (it.kind === "comment" && it.ctype === "free")) {
     for (let i = 0; i < it.pts.length; i += 2) { it.pts[i] += dx; it.pts[i + 1] += dy; }
   } else if (it.kind === "shape") {
     it.x1 += dx; it.y1 += dy; it.x2 += dx; it.y2 += dy;

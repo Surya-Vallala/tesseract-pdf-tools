@@ -4,24 +4,42 @@ import { icon, esc, h } from "./ui.js";
 import { baseName } from "./doc.js";
 import { pageGeom } from "./geom.js";
 import { drawableFor, drawableToSVG } from "./shapes.js";
+import { drawPicOnCanvas } from "./pics.js";
 
 // Thumbnails show your drawings too (they are drawn over the page picture).
 function thumbKey(doc, p) {
-  return renderKey(doc, p) + "|" + (p.items.some((it) => it.kind === "ink" || it.kind === "shape") ? doc.ovVersion || 0 : 0);
+  return renderKey(doc, p) + "|" + (p.items.some((it) => it.kind === "ink" || it.kind === "shape" || it.kind === "pic") ? doc.ovVersion || 0 : 0);
 }
 
 export async function paintMarks(doc, p, canvas) {
   const vis = new Map(doc.layers.map((l) => [l.id, l.visible]));
-  const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape") && vis.get(it.layer) !== false);
+  const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape" || it.kind === "pic") && (it.flat || vis.get(it.layer) !== false));
   if (!marks.length) return;
   const g = pageGeom(doc, p);
-  const body = marks.map((it) => drawableToSVG(drawableFor(it, g.unit, g.pt))).join("");
   const m = g.b2d.map((v) => +v.toFixed(5)).join(" ");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${g.dw} ${g.dh}" preserveAspectRatio="none"><g transform="matrix(${m})">${body}</g></svg>`;
-  const img = new Image();
-  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-  try { await img.decode(); } catch (e) { return; }
-  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  const ctx = canvas.getContext("2d");
+  // in order: runs of drawings as one picture of them, pictures straight onto the canvas
+  let run = [];
+  const flush = async () => {
+    if (!run.length) return;
+    const body = run.map((it) => drawableToSVG(drawableFor(it, g.unit, g.pt))).join("");
+    run = [];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${g.dw} ${g.dh}" preserveAspectRatio="none"><g transform="matrix(${m})">${body}</g></svg>`;
+    const img = new Image();
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    try { await img.decode(); } catch (e) { return; }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  for (const it of marks) {
+    if (it.kind !== "pic") { run.push(it); continue; }
+    await flush();
+    ctx.save();
+    ctx.setTransform(canvas.width / g.dw, 0, 0, canvas.height / g.dh, 0, 0);
+    ctx.transform(...g.b2d);
+    try { await drawPicOnCanvas(ctx, doc, it, Math.max(256, Math.min(1400, Math.max(canvas.width, canvas.height)))); } catch (e) { /* not drawn */ }
+    ctx.restore();
+  }
+  await flush();
 }
 
 const LONG_PRESS_MS = 380;

@@ -10,11 +10,14 @@ import { libDoc, newId } from "./doc.js";
 import { mul, inv, apply } from "./geom.js";
 import { PEN_KIND, shapeFrame, curveControl, fillOf, fillOpacityOf, smoothCmds } from "./shapes.js";
 import { LINE_KINDS, BOX_KINDS } from "./dgeom.js";
+import { settingsOf, picsOf, pictureFromPdfImage } from "./pics.js";
 
 export const DRAW_KEY = "TPTDraw";
 export const SKETCH_KEY = "TPTSketch";
 export const SCALE_KEY = "TPTScale";
 export const FILE_KEY = "TPTFile";
+export const IMG_KEY = "TPTImg";   // a picture's annotation -> its original picture
+export const HASH_KEY = "TPTHash"; // on that picture: its id
 export const GROUP_LABEL = "Drawing layers";
 
 const TO_DESK = { circle: "ellipse", curved: "curved_arrow", polygon: "ngon", poly: "polygon" };
@@ -48,6 +51,12 @@ export function fromDesk(d, ctx) {
   const pt = ctx.pt;
   const meta = { author: d.author || "", created: d.created || "" };
   const base = { color: d.color || "#1F2328", opacity: d.opacity == null ? 1 : d.opacity, layer: d.layer || "", meta };
+  if (d.kind === "image") {
+    // pictures keep the Windows app's box and matrix as they are (to base units)
+    const s = d.img || {};
+    if (!s.hash || !Array.isArray(d.m) || d.m.length !== 6 || !(d.w > 0) || !(d.h > 0)) return null;
+    return [{ ...base, id: d.id, kind: "pic", w: d.w, h: d.h, m: mul(P2B, d.m), img: structuredClone(s), width: d.width == null ? 1 : d.width }];
+  }
   if (d.kind === "ink") {
     if (!PENS.has(d.tool) || !Array.isArray(d.paths)) return null;
     const out = [];
@@ -144,6 +153,28 @@ export function toDesk(it, ctx) {
     m: [1, 0, 0, 1, 0, 0], label: "", ls: 0, hs: 0, table: null, n: 0, fa: 1, block: null,
     author: meta.author || ctx.author || "", created: meta.created || ctx.now || ""
   };
+  if (it.kind === "pic") {
+    const s = settingsOf(it);
+    let M = mul(B, it.m);
+    let w = it.w, h = it.h;
+    // a stretch held in the matrix goes into the box's size, as the Windows app keeps it
+    const ax = Math.hypot(M[0], M[1]), ay = Math.hypot(M[2], M[3]);
+    const square = Math.abs(M[0] * M[2] + M[1] * M[3]) <= 1e-6 * ax * ay;
+    const plain = (s.skew[0] === 0 && s.skew[1] === 0) || Math.abs(ax - ay) <= 1e-6 * ax;
+    if (ax > 1e-9 && ay > 1e-9 && square && plain && (Math.abs(ax - 1) > 1e-6 || Math.abs(ay - 1) > 1e-6)) {
+      w *= ax; h *= ay;
+      M = mul(M, [1 / ax, 0, 0, 1 / ay, 0, 0]);
+    }
+    d.kind = "image";
+    d.tool = "image";
+    d.w = r6(w); d.h = r6(h);
+    d.m = M.map(r6);
+    d.width = it.width == null ? 1 : r3(it.width);
+    d.dashed = false;
+    d.img = { hash: s.hash, pw: s.pw, ph: s.ph, crop: s.crop, skew: s.skew, flip: s.flip, look: s.look, white: s.white,
+      bright: s.bright, contrast: s.contrast, border: s.border };
+    return d;
+  }
   if (it.kind === "ink") {
     const k = PEN_KIND[it.pen] || PEN_KIND.pen;
     d.kind = "ink";
@@ -262,8 +293,11 @@ export async function readDrawings(src) {
     }
   }
   const pages = [];
+  const pics = new Map();    // hash -> the picture, read from the PDF
+  const picRefs = new Map(); // hash -> its PDF image in this file
   const libPages = lib.getPages();
-  libPages.forEach((pg, i) => {
+  for (let i = 0; i < libPages.length; i++) {
+    const pg = libPages[i];
     const info = src.pages[i];
     const out = { items: [], hidden: [], keep: [], foreign: 0, scale: null, file: "" };
     pages.push(out);
@@ -272,7 +306,7 @@ export async function readDrawings(src) {
     if (sc instanceof PDFNumber && sc.asNumber() > 0) out.scale = sc.asNumber();
     out.file = textOf(node.get(PDFName.of(FILE_KEY)));
     const annots = node.lookupMaybe(PDFName.of("Annots"), PDFArray);
-    if (!annots || !info) return;
+    if (!annots || !info) continue;
     const pctx = { b2p: pdfPageMatrix(info), pt: info.userUnit || 1 };
     for (const r of annots.asArray()) {
       const a = r instanceof PDFRef ? ctx.lookupMaybe(r, PDFDict) : r instanceof PDFDict ? r : null;
@@ -282,7 +316,20 @@ export async function readDrawings(src) {
       let d = null;
       try { d = JSON.parse(textOf(raw)); } catch (e) { d = null; }
       if (!d || !d.id) { out.foreign++; continue; }
-      const items = fromDesk(d, pctx);
+      if (d.kind === "image") {
+        // the original picture comes from the PDF; if the phone can't read it, the picture stays as it is
+        const hsh = d.img && d.img.hash;
+        const ir = a.get(PDFName.of(IMG_KEY));
+        let ok = pics.has(hsh);
+        if (!ok && hsh && ir instanceof PDFRef) {
+          try {
+            const pic = await pictureFromPdfImage(ctx, ir);
+            if (pic) { pics.set(hsh, pic); picRefs.set(hsh, refId(ir)); ok = true; }
+          } catch (e) { console.warn("A picture couldn't be read", e); }
+        }
+        if (!ok) d = null;
+      }
+      const items = d ? fromDesk(d, pctx) : null;
       if (items && r instanceof PDFRef) {
         out.items.push(...items);
         out.hidden.push({ annot: refId(r), id: d.id });
@@ -291,8 +338,8 @@ export async function readDrawings(src) {
         if (r instanceof PDFRef) out.keep.push(refId(r));
       }
     }
-  });
-  return { layers, pages };
+  }
+  return { layers, pages, pics, picRefs };
 }
 
 /**
@@ -318,6 +365,9 @@ export async function importDrawings(doc, src, pages) {
     mine.refs = { ...(mine.refs || {}), [src.id]: l.ref };
     src.sketch.set(l.ref, l.id);
   }
+  // pictures: kept once with the document; the file's own copy is used again when saving
+  for (const [hsh, pic] of data.pics) if (!picsOf(doc).has(hsh)) picsOf(doc).set(hsh, { ...pic, url: null });
+  src.picRefs = data.picRefs;
   // drawings onto the pages
   src.imported = new Set();
   src.hiddenAnnots = new Map(); // pdf.js annotation id -> page index

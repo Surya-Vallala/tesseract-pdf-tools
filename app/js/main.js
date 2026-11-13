@@ -10,13 +10,13 @@ import { askAuthor, openBubble, openCommentsList, editComment } from "./comments
 import { openTools, openPageImages } from "./tools.js";
 import { engine } from "./engine.js";
 import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./interop.js";
-import { pickFiles, onIncomingFiles, isAndroidApp } from "./platform.js";
+import { pickFiles, onIncomingFiles, isAndroidApp, settings } from "./platform.js";
 import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
 import { scanPages } from "./scan.js";
 import { rememberFile, listRecent, recentFile, forgetRecent, clearRecent, when } from "./recent.js";
-import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon } from "./ui.js";
+import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon, switchHTML } from "./ui.js";
 
-const APP_VERSION = "1.8.4";
+const APP_VERSION = "1.9.0";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -845,40 +845,70 @@ $("btnAbout").addEventListener("click", () => {
     </section>
     ${isAndroidApp ? `<section class="about-card">
       <p class="lbl">Updates</p>
-      <p>You have version ${APP_VERSION}. The app only goes online when you check.</p>
-      <button class="btn" type="button" data-update>Check for updates</button>
+      <p>You have version ${APP_VERSION}. The app looks for a newer version once a day and asks before updating. None of your files are sent.</p>
+      <button type="button" role="switch" class="switch-row about-switch" data-auto aria-checked="${autoUpdates()}"><span class="grow">Look for updates every day</span>${switchHTML(autoUpdates())}</button>
+      <button class="btn" type="button" data-update>Check now</button>
     </section>` : ""}
     <p class="muted" style="text-align:center">Tesseract PDF Tools ${APP_VERSION}${isAndroidApp ? " for Android" : ""}</p>
   </div>`);
   const sheet = openSheet({ title: "About", body });
   const upd = body.querySelector("[data-update]");
   if (upd) upd.addEventListener("click", () => { sheet.close(); checkForUpdates(); });
+  const auto = body.querySelector("[data-auto]");
+  if (auto) auto.addEventListener("click", () => {
+    const on = !autoUpdates();
+    settings.set("update-auto", on);
+    auto.setAttribute("aria-checked", on);
+    auto.querySelector(".switch").classList.toggle("on", on);
+  });
 });
 
-/* ---------- Android app: check for updates, asking first every time ---------- */
+/* ---------- Android app: updates, looked for once a day ---------- */
 
-async function checkForUpdates() {
-  const ok = await confirmDialog({
-    title: "Check for updates?",
-    message: "This connects to the internet to see if there's a newer version of the app. None of your files are sent.",
-    okText: "Check"
-  });
-  if (!ok) return;
+const UPDATE_EVERY = 24 * 3600 * 1000;
+const autoUpdates = () => settings.get("update-auto", true) !== false;
+
+/** Looks for a newer version. auto: the daily look, which stays quiet unless there is one. */
+async function checkForUpdates({ auto = false } = {}) {
   let info;
-  const b = busy("Checking for updates…");
+  const b = auto ? null : busy("Checking for updates…");
   try {
     info = await fetchUpdateInfo();
+    settings.set("update-checked", Date.now());
   } catch (e) {
     console.warn(e);
-    toast("Couldn't check for updates. Check your internet connection and try again.", { ms: 6000 });
+    if (!auto) toast("Couldn't check for updates. Check your internet connection and try again.", { ms: 6000 });
     return;
   } finally {
-    b.close();
+    if (b) b.close();
   }
   if (!newerThan(info.version, APP_VERSION)) {
-    toast(`You have the latest version (${APP_VERSION}).`);
+    if (!auto) toast(`You have the latest version (${APP_VERSION}).`);
     return;
   }
+  // working on a file: a quiet note instead of a sheet over it
+  if (auto && tabs.length) {
+    toast(`Version ${info.version} of the app is ready.`, { ms: 12000, action: { label: "Update", fn: () => offerUpdate(info) } });
+    return;
+  }
+  offerUpdate(info);
+}
+
+/** Once a day, when the app opens or comes back on screen. */
+function dailyUpdateCheck() {
+  if (!isAndroidApp || !autoUpdates() || document.visibilityState !== "visible") return;
+  const now = Date.now();
+  if (now - settings.get("update-checked", 0) < UPDATE_EVERY) return;
+  if (now - settings.get("update-tried", 0) < 3600 * 1000) return; // offline: try again in an hour
+  settings.set("update-tried", now);
+  checkForUpdates({ auto: true }).catch((e) => console.warn(e));
+}
+if (isAndroidApp) {
+  setTimeout(dailyUpdateCheck, 4000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") setTimeout(dailyUpdateCheck, 1500); });
+}
+
+function offerUpdate(info) {
   const notes = Array.isArray(info.notes) ? info.notes.slice(0, 8) : [];
   const body = h(`<div>
     <p style="margin-top:0">Version ${esc(info.version)} is ready${info.size_mb ? ` (${esc(String(info.size_mb))} MB)` : ""}. You have ${APP_VERSION}.</p>
@@ -930,6 +960,14 @@ window.addEventListener("appinstalled", () => {
 if ("serviceWorker" in navigator && !isAndroidApp) {
   let updateAsked = false;
   navigator.serviceWorker.register("sw.js").then((reg) => {
+    // Chrome looks for a new version when the app opens; an app left open looks once a day too
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - settings.get("sw-checked", 0) < UPDATE_EVERY) return;
+      settings.set("sw-checked", now);
+      reg.update().catch(() => {});
+    });
     const offer = (w) => {
       toast("A new version is ready.", {
         ms: 0,

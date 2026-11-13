@@ -5,6 +5,7 @@ import { drawableFor, drawableToSVG, commentAnchor } from "./shapes.js";
 import { wmAppliesTo, wmSVG } from "./watermark.js";
 import { apply } from "./geom.js";
 import { icon } from "./ui.js";
+import { picSVG } from "./pics.js";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -44,8 +45,12 @@ export function renderOverlay(doc, it, { selectedId = null } = {}) {
   let notes = "";
   let blurs = "";
   let pins = "";
+  const again = () => { if (it.el && it.el.isConnected) renderOverlay(doc, it); };
   for (const item of p.items) {
-    if (item.kind === "ink" || item.kind === "shape") {
+    if (item.kind === "pic") {
+      if (!item.flat && layerVisible.get(item.layer) === false) continue;
+      marks += `<g data-id="${item.id}">${picSVG(doc, item, { onReady: again })}</g>`;
+    } else if (item.kind === "ink" || item.kind === "shape") {
       if (layerVisible.get(item.layer) === false) continue;
       marks += `<g data-id="${item.id}">${drawableToSVG(drawableFor(item, g.unit, g.pt))}</g>`;
     } else if (item.kind === "blur") {

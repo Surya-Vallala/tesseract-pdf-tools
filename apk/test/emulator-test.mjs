@@ -48,6 +48,15 @@ try {
   }));
   step("App starts on the home screen", s1.native && s1.home && s1.installCardHidden && !s1.serviceWorker, s1);
 
+  // The daily look for updates happens by itself a few seconds after the app opens.
+  let checkedAt = 0;
+  for (let i = 0; i < 20 && !checkedAt; i++) {
+    checkedAt = await page.evaluate(() => Number(JSON.parse(localStorage.getItem("tpt-update-checked") || "0")));
+    if (!checkedAt) await sleep(1000);
+  }
+  const autoUi = await page.evaluate(() => [...document.querySelectorAll(".toast, .sheet h2")].map((t) => t.textContent).join(" | "));
+  step("The app looks for an update by itself once a day", checkedAt > 0, { checkedAt, shown: autoUi });
+
   // Make two small PDFs inside the app and save them to Downloads the way the Save sheet does.
   const savedNames = await page.evaluate(async () => {
     await new Promise((res, rej) => {
@@ -162,20 +171,19 @@ try {
   const shareResult = await page.evaluate(() => window.__shareResult);
   step("Share opens Android's share menu and closing it is understood", /chooser|resolver|ChooserActivity|intentresolver/i.test(focus) && shareResult === "cancelled", { focus: focus.trim(), shareResult });
 
-  // Check for updates, as the person would: About, Check for updates, Check.
+  // Check for updates, as the person would: About, Check now.
   await page.click("#btnAbout");
   await sleep(800);
+  await device.screenshot({ path: `${OUT}/5-about-updates.png` });
+  const autoSwitch = await page.evaluate(() => { const b = document.querySelector("[data-auto]"); return b ? b.getAttribute("aria-checked") : null; });
   await page.click("[data-update]");
-  await sleep(800);
-  await device.screenshot({ path: `${OUT}/5-update-ask.png` });
-  await page.click('.dialog [data-r="1"]');
   let updToast = "";
   for (let i = 0; i < 20 && !/version|update/i.test(updToast); i++) {
     await sleep(700);
     updToast = await page.evaluate(() => [...document.querySelectorAll(".toast, .sheet h2")].map((t) => t.textContent).join(" | "));
   }
   await device.screenshot({ path: `${OUT}/6-update-result.png` });
-  step("Check for updates asks first, then reads version.json", /latest version|Update available/.test(updToast), updToast);
+  step("Check now reads version.json (daily check switched on)", /latest version|Update available/.test(updToast) && autoSwitch === "true", { updToast, autoSwitch });
   await page.evaluate(() => { document.querySelectorAll(".sheet-head .ib").forEach((b) => b.click()); });
   await sleep(500);
 
@@ -198,6 +206,39 @@ try {
   step("Update download is checked and Android's installer opens", upd === "installer" && /packageinstaller/i.test(instFocus), { upd, focus: instFocus.trim() });
   adb("shell input keyevent 4");
   await sleep(2000);
+
+  // Picture → Take a photo opens the camera app (and coming back leaves the file as it was).
+  if (idOf(savedNames[0])) {
+    const again = await openWith(savedNames[0]);
+    await page.click('[data-tab="markup"]');
+    await sleep(800);
+    if (await page.evaluate(() => !!document.querySelector(".draw-hint button"))) await page.click(".draw-hint button");
+    await page.click('[data-tool="picture"]');
+    await sleep(800);
+    await device.screenshot({ path: `${OUT}/7b-picture-menu.png` });
+    await page.click(".sheet .tool-row:nth-of-type(2)");
+    let camFocus = "";
+    for (let i = 0; i < 15; i++) {
+      await sleep(1000);
+      camFocus = adb("shell dumpsys window | grep -E 'mCurrentFocus'");
+      if (!camFocus.includes(PKG) && camFocus.trim()) break;
+    }
+    await sleep(1500);
+    await device.screenshot({ path: `${OUT}/7c-camera.png` });
+    const camera = /camera/i.test(camFocus);
+    adb("shell input keyevent 4");
+    await sleep(2500);
+    if (!(await docState()).doc) { adb("shell input keyevent 4"); await sleep(1500); }
+    const afterCam = await docState();
+    step("Picture → Take a photo opens the camera app", camera && afterCam.doc && again.doc, { focus: camFocus.trim(), afterCam });
+    await page.click("#btnDone").catch(() => {});
+    await sleep(800);
+    const sz = adb("shell wm size").match(/(\d+)x(\d+)/);
+    adb(`shell input tap ${Math.round((sz ? +sz[1] : 1080) / 2)} ${Math.round((sz ? +sz[2] : 2400) * 0.55)}`);
+    await sleep(800);
+    adb("shell input keyevent 4");
+    await sleep(2000);
+  }
 
   // Back on the home screen leaves the app (it goes to the background, not crash).
   adb("shell input keyevent 4");
