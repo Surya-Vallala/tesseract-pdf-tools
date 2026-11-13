@@ -21,7 +21,9 @@ public class MainActivity extends BridgeActivity {
         bridge.addWebViewListener(new WebViewListener() {
             @Override
             public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-                runOnUiThread(MainActivity.this::recreate);
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) recreate();
+                });
                 return true;
             }
         });
