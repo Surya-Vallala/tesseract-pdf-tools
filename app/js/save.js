@@ -726,8 +726,12 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
       let ref = null;
       for (const [sid, srcRef] of Object.entries((l && l.refs) || {})) {
         const st = states.get(Number(sid));
-        const mapped = st && st.copier && st.copier.traversedObjects.get(refFromId(srcRef));
-        if (mapped && mapped !== PDFNull) { ref = mapped; break; }
+        if (!st || !st.copier) continue;
+        let mapped = st.copier.traversedObjects.get(refFromId(srcRef));
+        // not copied yet (the drawings that used it are written again, not copied): copy it now, so the
+        // layer isn't in the new file twice
+        if (!mapped) { try { mapped = st.copier.copy(refFromId(srcRef)); } catch (e) { mapped = null; } }
+        if (mapped && mapped !== PDFNull && mapped instanceof window.PDFLib.PDFRef) { ref = mapped; break; }
       }
       if (!ref) {
         ref = ctx.register(ctx.obj({ Type: "OCG", Name: PDFHexString.fromText(l ? l.name : "Drawing") }));

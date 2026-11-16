@@ -1,5 +1,6 @@
 // Tesseract PDF Tools - phone app
-import { Doc, loadSource, baseName, closeSource, unlockSource, blankSource } from "./doc.js";
+import { Doc, loadSource, baseName, closeSource, unlockSource } from "./doc.js";
+import { openBlankPages } from "./blank.js";
 import { Viewer } from "./viewer.js";
 import { PageGrid } from "./pages.js";
 import { openCrop } from "./crop.js";
@@ -16,7 +17,7 @@ import { scanPages } from "./scan.js";
 import { rememberFile, listRecent, recentFile, forgetRecent, clearRecent, when } from "./recent.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon, switchHTML } from "./ui.js";
 
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -679,11 +680,25 @@ function commentsToggled() {
 }
 
 $("btnSelAll").addEventListener("click", () => grid.setAll(grid.selection.size === 0));
+function selectAdded(pages) {
+  grid.setAll(false);
+  for (const p of pages) grid.toggle(p.key);
+}
+
 $("btnAddFiles").addEventListener("click", async (e) => {
   const v = await openMenu(e.currentTarget, [
     { label: "From files", value: "files", icon: "file" },
-    { label: "Scan pages", value: "scan", icon: "scan" }
+    { label: "Scan pages", value: "scan", icon: "scan" },
+    { label: "Blank pages", value: "blank", icon: "blank" }
   ]);
+  if (v === "blank") {
+    if (!cur) return;
+    const doc = cur.doc;
+    const sel = grid.selectedPages();
+    const anchor = sel.length ? sel[sel.length - 1] : doc.pages[viewer.currentIndex()] || doc.pages[doc.pages.length - 1] || null;
+    openBlankPages(doc, { anchor, where: sel.length ? "after" : "end", onAdded: selectAdded });
+    return;
+  }
   const files = v === "files" ? await pickFiles({ multiple: true }) : v === "scan" ? await scanPages() : [];
   if (files.length) addFiles(files);
 });
@@ -725,12 +740,13 @@ $("selbar").addEventListener("click", async (e) => {
       const v = await openMenu(b, [
         { label: "Save as pictures", value: "pics", icon: "pagepic" },
         { label: "Duplicate", value: "dup", icon: "copy" },
-        { label: "Insert blank page after", value: "blank", icon: "blank" },
+        { label: "Insert blank pages…", value: "blank", icon: "blank" },
         { label: "Move to start", value: "start", icon: "tostart" },
         { label: "Move to end", value: "end", icon: "toend" }
       ], { above: true });
       if (!v) return;
       if (v === "pics") { openPageImages(toolsCtx, sel); return; }
+      if (v === "blank") { openBlankPages(doc, { anchor: sel[sel.length - 1], where: "after", onAdded: selectAdded }); return; }
       doc.commit();
       const keys = new Set(sel.map((p) => p.key));
       if (v === "dup") {
@@ -745,12 +761,6 @@ $("selbar").addEventListener("click", async (e) => {
         }
         doc.pages = next;
         toast(`Duplicated ${sel.length} page${sel.length === 1 ? "" : "s"}`);
-      } else if (v === "blank") {
-        const last = sel[sel.length - 1];
-        const ps = doc.pageSize(last);
-        const src = blankSource(ps.w, ps.h);
-        doc.addSource(src, doc.pages.indexOf(last) + 1);
-        toast("Blank page added");
       } else if (v === "start" || v === "end") {
         const moving = doc.pages.filter((p) => keys.has(p.key));
         const rest = doc.pages.filter((p) => !keys.has(p.key));

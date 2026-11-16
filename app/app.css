@@ -970,3 +970,18 @@ button { font: inherit; color: inherit; }
   .toolbar .tab { font-size: 10px; letter-spacing: -0.2px; }
   .toolbar .tool-pill { width: 38px; }
 }
+
+/* Add blank pages */
+.blank-top { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.blank-shape { flex: none; width: 72px; height: 72px; display: flex; align-items: center; justify-content: center; }
+.blank-paper { background: #fff; border: 1px solid var(--line); box-shadow: 1px 2px 0 rgba(0, 0, 0, .12); }
+.blank-what { display: flex; flex-direction: column; gap: 2px; }
+.blank-what b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.blank-what span { color: var(--muted); font-size: 13px; }
+.blank-form .seg { width: 100%; }
+.blank-form .seg button { flex: 1; }
+.blank-row { display: flex; gap: 12px; }
+.blank-row .field { flex: 1; min-width: 0; }
+.blank-count { width: max-content; height: 46px; }
+.blank-count button { width: 46px; }
+.blank-count input { width: 64px; height: 100%; border: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
