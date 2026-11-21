@@ -121,6 +121,10 @@
     padding: 10px 14px;
     white-space: nowrap;
   }
+  .phone-btns { flex: none; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+  .phone-btns .btn2 { text-align: center; }
+  .phone .btn2.solid { background: var(--accent); color: var(--accent-text); }
+  .apk-meta { font-size: 13px; color: var(--muted); text-align: center; }
   @media (max-width: 420px) { .phone { flex-direction: column; align-items: stretch; } .phone .btn2 { text-align: center; } }
 </style>
 </head>
@@ -139,8 +143,12 @@
   </div>
 
   <div class="phone" id="phone-card">
-    <p><strong>On your phone?</strong>The phone version opens in Chrome and installs like an app. It does everything the Windows app does except Excel tables: layers, mark-up, comments, blur, watermark, password, smaller files, split and text recognition.</p>
-    <a class="btn2" href="app/">Open phone app</a>
+    <p><strong>On your phone?</strong>Get the Android app, or open the phone version in Chrome, where it installs like an app. Both do everything the Windows app does except Excel tables: layers, mark-up, pictures, comments, blur, watermark, password, smaller files, split and text recognition.</p>
+    <div class="phone-btns">
+      <a class="btn2 solid" id="apk-btn" href="android/version.json" hidden>Download Android app</a>
+      <span class="apk-meta" id="apk-line" hidden></span>
+      <a class="btn2" href="app/">Open in Chrome</a>
+    </div>
   </div>
 
   <section>
@@ -167,6 +175,15 @@
     <p class="small">If Windows shows "Windows protected your PC", choose <strong>More info</strong>, then <strong>Run anyway</strong>. This appears for new apps that are not yet widely downloaded.</p>
   </section>
 
+  <section id="android-section" hidden>
+    <h2>Install on Android</h2>
+    <ol>
+      <li>Tap <strong>Download Android app</strong> above. It works on Android 7 and later.</li>
+      <li>Open the downloaded file. The first time, Android asks you to allow your browser (or Files) to install apps: allow it, then tap <strong>Install</strong>.</li>
+      <li>After that, the app looks for updates once a day and asks before updating.</li>
+    </ol>
+  </section>
+
   <footer>
     Ideas or problems? Write to <a href="mailto:tools@tesseractstudio.co">tools@tesseractstudio.co</a>.
   </footer>
@@ -180,6 +197,25 @@
       var dl = document.querySelector(".download");
       dl.parentNode.insertBefore(card, dl);
     }
+  })();
+</script>
+<script>
+  // The Android app: reads android/version.json, so the button always gets the latest APK.
+  (function () {
+    fetch("android/version.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (v) {
+        if (!v.file) throw 0;
+        var btn = document.getElementById("apk-btn");
+        btn.href = "android/" + v.file;
+        btn.setAttribute("download", v.file);
+        btn.hidden = false;
+        var line = document.getElementById("apk-line");
+        line.textContent = "Version " + v.version + (v.size_mb ? " \u00b7 " + v.size_mb + " MB" : "");
+        line.hidden = false;
+        document.getElementById("android-section").hidden = false;
+      })
+      .catch(function () { /* no Android download shown */ });
   })();
 </script>
 <script>
