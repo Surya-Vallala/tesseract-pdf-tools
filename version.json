@@ -1,12 +1,12 @@
 {
-  "version": "1.7.1",
-  "file": "TesseractPDFTools-Setup-1.7.1.exe",
-  "size_mb": 30.4,
-  "sha256": "7dcd22d226086e50b0baa40b8d5a1a0855e3712c357abed97669cc9c1b07e4e6",
-  "date": "2026-11-16",
+  "version": "1.7.2",
+  "file": "TesseractPDFTools-Setup-1.7.2.exe",
+  "size_mb": 33.8,
+  "sha256": "ca3e767d940c8d998ab064ea9becd197e3789f3ae5c8d24f9ca525252cc93202",
+  "date": "2026-11-21",
   "notes": [
-    "Insert Blank Pages… (Pages menu, Insert menu, or right-click a page): the size of any page in the file, a standard sheet (A0 to A5, Letter, Legal, Tabloid) or your own size in mm",
-    "Portrait or landscape; before or after the page, at the start or the end; up to 100 pages at once",
-    "From 1.7.0: pictures on the page (Insert → Picture…), and a daily check for updates"
+    "HEIC photos (iPhone and many Android phones): open them, combine them, or insert them as pictures",
+    "Remove Recognized Text also removes text recognised on the phone (phone app 1.10 or later)",
+    "From 1.7.1: Insert Blank Pages… (Pages menu, Insert menu, or right-click a page)"
   ]
 }

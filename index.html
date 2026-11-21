@@ -162,8 +162,13 @@
   </section>
 
   <section id="notes-section" hidden>
-    <h2>What's new</h2>
+    <h2 id="notes-title">What's new in the Windows app</h2>
     <ul id="notes"></ul>
+  </section>
+
+  <section id="phone-notes-section" hidden>
+    <h2 id="phone-notes-title">What's new in the phone app</h2>
+    <ul id="phone-notes"></ul>
   </section>
 
   <section>
@@ -214,6 +219,14 @@
         line.textContent = "Version " + v.version + (v.size_mb ? " \u00b7 " + v.size_mb + " MB" : "");
         line.hidden = false;
         document.getElementById("android-section").hidden = false;
+        var items = Array.isArray(v.notes) ? v.notes : (v.notes ? String(v.notes).split("\n") : []);
+        items = items.filter(function (t) { return String(t).trim(); });
+        if (items.length) {
+          var ul = document.getElementById("phone-notes");
+          items.forEach(function (t) { var li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+          document.getElementById("phone-notes-title").textContent = "What's new in the phone app (" + v.version + ")";
+          document.getElementById("phone-notes-section").hidden = false;
+        }
       })
       .catch(function () { /* no Android download shown */ });
   })();
@@ -236,6 +249,7 @@
         if (items.length) {
           var ul = document.getElementById("notes");
           items.forEach(function (t) { var li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+          document.getElementById("notes-title").textContent = "What's new in the Windows app (" + v.version + ")";
           document.getElementById("notes-section").hidden = false;
         }
       })
