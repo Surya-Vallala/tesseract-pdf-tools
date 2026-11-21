@@ -18,7 +18,7 @@ import {
   addMyBlock, myTile
 } from "./blockui.js";
 import { isPic, picCorners, picBounds, hitPic, toBox, resized, withCrop, fullBox, settingsOf as picSettings, turned, picAngle, shiftPic } from "./pics.js";
-import { openPictureMenu, appendPicOptions, turnPic, startCrop, showCropLive } from "./picui.js";
+import { openPictureMenu, appendPicOptions, turnPic, startCrop, showCropLive, startSkew, keepProportions } from "./picui.js";
 
 const DRAW_TOOLS = new Set(["pen", "eraser", "blur", "shapes", "comment"]);
 // Lines and arrows are edited by their ends; every other shape is a box that can be turned.
@@ -84,6 +84,7 @@ export class Markup {
 
   exit() {
     if (this.cropping) closeLayer(this.cropping.layer);
+    if (this.skewing) closeLayer(this.skewing.layer);
     if (this.panel) closeLayer(this.panel.layer);
     this.cancelGesture();
     this.select(null);
@@ -766,6 +767,7 @@ export class Markup {
 
   select(sel) {
     if (this.cropping && (!sel || sel.id !== this.cropping.id)) closeLayer(this.cropping.layer);
+    if (this.skewing && (!sel || sel.id !== this.skewing.id)) closeLayer(this.skewing.layer);
     this.sel = sel;
     this.drawSelection();
     if (this.active) this.renderOptions();
@@ -824,11 +826,11 @@ export class Markup {
     }
     for (const hd of this.handlesFor(item, vit)) {
       const [x, y] = toWrap([hd.x, hd.y]);
-      const side = hd.k.startsWith("ps-") || hd.k.startsWith("k-");
-      ui.appendChild(h(`<span class="handle${hd.k === "rot" ? " rot" : ""}${side ? " side" : ""}${hd.k[0] === "k" ? " crop" : ""}" style="left:${x}px;top:${y}px">${hd.k === "rot" ? icon("turn") : ""}</span>`));
+      const side = hd.k.startsWith("ps-") || hd.k.startsWith("k-") || hd.k.startsWith("sk-");
+      ui.appendChild(h(`<span class="handle${hd.k === "rot" ? " rot" : ""}${side ? " side" : ""}${hd.k[0] === "k" ? " crop" : ""}${hd.k.startsWith("sk-") ? " skew" : ""}" data-k="${hd.k}" style="left:${x}px;top:${y}px">${hd.k === "rot" ? icon("turn") : ""}</span>`));
     }
-    if (this.cropping) {
-      // cropping: no bar on the page, the panel below has Done
+    if (this.cropping || this.skewing) {
+      // cropping or slanting: no bar on the page, the panel below has Done
       this.viewer.wrap.appendChild(ui);
       this.selUI = ui;
       return;
@@ -848,6 +850,7 @@ export class Markup {
     } else if (isPic(item)) {
       add("crop", "Crop", () => startCrop(this));
       add("turn", "Turn", () => turnPic(this));
+      add("skew", "Skew", () => startSkew(this));
     } else if (item.kind === "shape" && (LABEL_KINDS.has(item.shape) || item.shape === "north")) add("text", "Edit text", () => this.editText(item));
     if (item.kind === "comment") add("edit", "Edit", () => this.onComment && this.onComment("edit", this.sel.key, item.id));
     if (item.kind !== "comment" && item.kind !== "blur") add("copy", "Copy", () => this.duplicateSelected());
@@ -910,6 +913,14 @@ export class Markup {
     const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     const len = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
     const out = [];
+    if (this.skewing) {
+      // slanting: the middle of each side
+      [["t", 0, 1], ["r", 1, 2], ["b", 2, 3], ["l", 3, 0]].forEach(([k, i, j]) => {
+        const [x, y] = mid(cs[i], cs[j]);
+        out.push({ k: "sk-" + k, x, y });
+      });
+      return out;
+    }
     const crop = !!this.cropping;
     const pre = crop ? "k" : "pc";
     [["00", 0], ["10", 1], ["11", 2], ["01", 3]].forEach(([k, i]) => out.push({ k: pre + k, x: cs[i][0], y: cs[i][1] }));
@@ -947,6 +958,30 @@ export class Markup {
       if (Math.abs(a - q90) < 6) a = q90;
       else if (Math.abs(a - q15) < 3) a = q15;
       n = turned(o, a - R - picAngle(o));
+    } else if (mode.startsWith("sk-")) {
+      // slanting: the side's middle follows the finger (in the unslanted frame); the centre stays put
+      const q = apply(inv(o.m), bx, by);
+      const s = picSettings(o);
+      let [hdeg, vdeg] = s.skew;
+      const side = mode[3];
+      const deg = (tan) => {
+        let d = (Math.atan(tan) * 180) / Math.PI;
+        const q15 = Math.round(d / 15) * 15;
+        if (Math.abs(d - q15) < 2) d = q15;
+        return Math.max(-75, Math.min(75, Math.round(d * 10) / 10));
+      };
+      if (side === "t" || side === "b") hdeg = deg(((side === "t" ? -2 : 2) * q[0]) / Math.max(o.h, 1e-6));
+      else vdeg = deg(((side === "l" ? -2 : 2) * q[1]) / Math.max(o.w, 1e-6));
+      n = structuredClone(o);
+      n.img = { ...(n.img || {}), skew: [hdeg, vdeg] };
+    } else if (mode.startsWith("pc") && !keepProportions()) {
+      // a corner, proportions off: it follows the finger freely, the opposite corner stays put
+      const sx = mode[2] === "1" ? 1 : -1, sy = mode[3] === "1" ? 1 : -1;
+      const [lx, ly] = toBox(o, bx, by);
+      const ox = (-sx * o.w) / 2, oy = (-sy * o.h) / 2;
+      const ex = sx > 0 ? Math.max(lx, ox + 2) : Math.min(lx, ox - 2);
+      const ey = sy > 0 ? Math.max(ly, oy + 2) : Math.min(ly, oy - 2);
+      n = resized(o, Math.min(ox, ex), Math.min(oy, ey), Math.max(ox, ex), Math.max(oy, ey));
     } else if (mode.startsWith("pc")) {
       // a corner: the picture keeps its proportions, the opposite corner stays put
       const sx = mode[2] === "1" ? 1 : -1, sy = mode[3] === "1" ? 1 : -1;
@@ -1095,7 +1130,7 @@ export class Markup {
     }
     // a picture: a touch well inside it moves it, unless it's on a handle of a big picture
     let picInside = false;
-    if (isPic(item) && !this.cropping) {
+    if (isPic(item) && !this.cropping && !this.skewing) {
       const [bx, by] = this.viewer.toBase(vit, e.clientX, e.clientY);
       const [lx, ly] = toBox(item, bx, by);
       const k = this.viewer.basePerPx(vit);
@@ -1139,8 +1174,8 @@ export class Markup {
       return this.capture(e);
     }
 
-    // Cropping a picture: its crop handles, anything else scrolls.
-    if (this.cropping) {
+    // Cropping or slanting a picture: its handles, anything else scrolls.
+    if (this.cropping || this.skewing) {
       const hk = this.sel && this.sel.key === vit.p.key && !fingerScrolls ? this.hitHandle(e) : null;
       if (hk) { this.startEdit(base, this.selectedItem(), hk); return this.capture(e); }
       this.g = { ...base, type: "pan" };

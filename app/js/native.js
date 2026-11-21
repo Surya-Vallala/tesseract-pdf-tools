@@ -56,6 +56,12 @@ export async function saveFile(file) {
   }
 }
 
+/** Opens Android's print screen for a finished PDF (a printer, or Save as PDF). */
+export async function printPdf(file, pages) {
+  const out = await writeOut(file);
+  await call("Tesseract", "printPdf", { path: out.path, name: file.name, pages: pages || 0 });
+}
+
 /** Opens Android's share menu. Returns "shared" or "cancelled", like platform.shareFiles. */
 export async function shareFiles(files, title) {
   const urls = [];

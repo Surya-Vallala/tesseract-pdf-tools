@@ -108,8 +108,9 @@ export class Viewer {
       if (it) {
         old.delete(p.key);
         const changed = it.p.rot !== p.rot || JSON.stringify(it.p.crop) !== JSON.stringify(p.crop) || it.fit !== this.fitOf(p);
+        const textGone = !!it.p.hideOcr !== !!p.hideOcr || !!it.p.dropOcr !== !!p.dropOcr; // recognised text removed or back
         it.p = p;
-        if (changed) { this.resetPicture(it); this.dropText(it); }
+        if (changed) { this.resetPicture(it); this.dropText(it); } else if (textGone) this.dropText(it);
         it.ovVer = -1;
       } else {
         const el = document.createElement("div");
@@ -237,7 +238,7 @@ export class Viewer {
     if (it.text || it.textPending || !this.doc) return;
     const doc = this.doc;
     const s = doc.src(it.p);
-    const ocr = s.ocr && s.ocr[it.p.index];
+    const ocr = !it.p.hideOcr && s.ocr && s.ocr[it.p.index];
     it.textPending = true;
     try {
       if (ocr && ocr.words.length) {
@@ -256,7 +257,10 @@ export class Viewer {
           frag.appendChild(sp);
         }
         wrapper.appendChild(frag);
-        it.text = { wrapper, kind: "ocr", R: ocr.R || 0 };
+        it.text = { wrapper, kind: "ocr", R: ocr.R || 0, divs: [...wrapper.children] };
+      } else if (s.kind === "pdf" && it.p.dropOcr && s.ocrPages && s.ocrPages.has(it.p.index)) {
+        it.text = { empty: true }; // its recognised text was removed (a scanned page has no other text)
+        return;
       } else if (s.kind === "pdf") {
         const page = await s.pdf.getPage(it.p.index + 1);
         const g = this.geom(it);
@@ -272,7 +276,7 @@ export class Viewer {
         wrapper.appendChild(container);
         const tl = new pdfjsLib.TextLayer({ textContentSource: tc, container, viewport: vp });
         await tl.render();
-        it.text = { wrapper, container, kind: "pdf", fw: vp.width, fh: vp.height };
+        it.text = { wrapper, container, kind: "pdf", fw: vp.width, fh: vp.height, divs: tl.textDivs };
       } else {
         it.text = { empty: true };
         return;
@@ -281,6 +285,7 @@ export class Viewer {
       const ref = it.ov ? it.ov.marks : null;
       it.el.insertBefore(it.text.wrapper, ref);
       this.layoutText(it);
+      if (this.onText) this.onText(it);
     } catch (e) {
       it.text = { empty: true };
     } finally {

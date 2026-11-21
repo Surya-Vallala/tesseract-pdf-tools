@@ -1,4 +1,5 @@
 // The working document: a list of pages drawn from one or more source files.
+import { readableImage } from "./imgconv.js";
 import * as pdfjsLib from "../vendor/pdfjs/pdf.min.mjs";
 
 const PDFJS_BASE = new URL("../vendor/pdfjs/", import.meta.url).href;
@@ -28,6 +29,7 @@ async function sniff(file) {
   if (str.startsWith("GIF8")) return "gif";
   if (str.startsWith("RIFF") && str.slice(8, 12) === "WEBP") return "webp";
   if (str.startsWith("BM")) return "bmp";
+  if (str.startsWith("II*\0") || str.startsWith("MM\0*")) return "tiff";
   if (str.slice(4, 8) === "ftyp") {
     const brand = str.slice(8, 12);
     if (/^(avif|avis)/.test(brand)) return "avif";
@@ -73,7 +75,16 @@ export async function loadSource(file, { askPassword } = {}) {
   const name = file.name || (kind === "pdf" ? "Shared file.pdf" : "Photo");
   if (!kind) throw new FileOpenError(`“${name}” isn't a PDF or a photo.`, "type");
   if (kind === "pdf") return loadPdfSource(file, name, askPassword);
-  if (kind === "heic") throw new FileOpenError(`“${name}” is a HEIC photo, which Chrome can't open. In your camera settings, choose JPEG, or share the photo as JPEG.`, "heic");
+  if (kind === "heic" || kind === "tiff") {
+    // HEIC photos and TIFF pictures: read into a JPEG / PNG copy first
+    let f;
+    try {
+      f = await readableImage(file);
+    } catch (e) {
+      throw new FileOpenError(`“${name}”: ${e.message}`, kind);
+    }
+    return loadImageSource(f, name, await sniff(f));
+  }
   return loadImageSource(file, name, kind);
 }
 
@@ -209,9 +220,15 @@ export class Doc {
     this.ovVersion = 0;
     this.history = [];
     this.future = [];
-    this.dirty = false;
+    this._dirty = false;       // unsaved changes; setting it tells "dirty" listeners (recovery.js)
     this.imageFit = "a4";
     this.listeners = new Map();
+  }
+
+  get dirty() { return this._dirty; }
+  set dirty(v) {
+    this._dirty = !!v;
+    this.emit("dirty", this._dirty);
   }
 
   on(type, fn) {
@@ -390,6 +407,7 @@ export function closeSource(s) {
 
 // Replace a protected PDF's bytes with the unlocked copy, so it can be edited.
 export function unlockSource(s, plainBytes) {
+  if (!s.lockedBytes) s.lockedBytes = s.bytes; // as it came: the recovery copy keeps this one
   s.bytes = plainBytes;
   s.lib = null;
   s.locked = false;

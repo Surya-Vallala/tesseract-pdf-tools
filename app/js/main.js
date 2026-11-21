@@ -1,5 +1,5 @@
 // Tesseract PDF Tools - phone app
-import { Doc, loadSource, baseName, closeSource, unlockSource } from "./doc.js";
+import { Doc, loadSource, baseName, closeSource, unlockSource, blankSource } from "./doc.js";
 import { openBlankPages } from "./blank.js";
 import { Viewer } from "./viewer.js";
 import { PageGrid } from "./pages.js";
@@ -14,10 +14,15 @@ import { importDrawings, syncSketchVisibility, applyCommentVisibility } from "./
 import { pickFiles, onIncomingFiles, isAndroidApp, settings } from "./platform.js";
 import { fetchUpdateInfo, installUpdate, newerThan } from "./native.js";
 import { scanPages } from "./scan.js";
+import { picsOf } from "./pics.js";
+import * as recovery from "./recovery.js";
+import { openFind, closeFind, findDocChanged } from "./find.js";
+import { openPrint } from "./print.js";
+import { fileOcrPages } from "./ocrlayer.js";
 import { rememberFile, listRecent, recentFile, forgetRecent, clearRecent, when } from "./recent.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon, switchHTML } from "./ui.js";
 
-const APP_VERSION = "1.9.2";
+const APP_VERSION = "1.10.0";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
@@ -62,7 +67,7 @@ const markup = new Markup({
   chip: $("layerChip"),
   views: $("views"),
   getDoc: () => (cur ? cur.doc : null),
-  onChange: () => updateDocUi(),
+  onChange: () => { updateDocUi(); if (cur) recovery.changed(cur.doc); },
   onComment: (action, key, id) => {
     const page = cur.doc.pages.find((p) => p.key === key);
     if (page && action === "edit") editComment(cur.doc, page, id, marksChanged);
@@ -292,8 +297,10 @@ async function bringDrawings(doc, pairs) {
 function openTab(doc, tab) {
   const t = { doc, tab, view: null };
   tabs.push(t);
+  recovery.watch(doc);
   doc.on("pages", () => {
     if (!cur || cur.doc !== doc) return;
+    findDocChanged();
     viewer.refresh();
     grid.refresh();
     markup.drawSelection();
@@ -332,6 +339,7 @@ function pushDocLayer() {
 
 function activateTab(t) {
   if (!t || cur === t) return;
+  closeFind();
   if (cur) {
     if (cur.tab === "markup") { markup.exit(); cur.tab = "view"; }
     const v = viewer.saveState();
@@ -491,6 +499,7 @@ function makeRoom(count) {
 function dropTab(t) {
   const i = tabs.indexOf(t);
   if (i < 0) return;
+  if (t === cur) closeFind();
   tabs.splice(i, 1);
   if (cur === t) {
     if (cur.tab === "markup") markup.exit();
@@ -500,6 +509,7 @@ function dropTab(t) {
     cur = null;
   }
   for (const s of t.doc.sources.values()) closeSource(s);
+  recovery.forget(t.doc);
   if (!cur && tabs.length) {
     activateTab(tabs[Math.max(0, i - 1)]);
     return;
@@ -569,6 +579,7 @@ function setTab(tab) {
     return;
   }
   const was = cur.tab;
+  if (tab !== "view") closeFind();
   if (was === "markup" && tab !== "markup") markup.exit();
   cur.tab = tab;
   document.querySelectorAll("#tabbar .tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -653,8 +664,17 @@ const toolsCtx = {
   textChanged: (pages) => {
     for (const p of pages) { const it = viewer.itemFor(p.key); if (it) viewer.dropText(it); }
     viewer.update(true);
-  }
+    findDocChanged();
+  },
+  find: () => startFind(),
+  print: () => openPrint(toolsCtx)
 };
+
+function startFind() {
+  if (!cur) return;
+  if (cur.tab !== "view") setTab("view");
+  openFind({ host: docScreen, viewer, doc: cur.doc, before: document.querySelector("#docScreen .viewbar") });
+}
 
 $("btnDone").addEventListener("click", () => setTab("view"));
 $("layerChip").addEventListener("click", async (e) => {
@@ -797,13 +817,116 @@ $("btnBack").addEventListener("click", () => { leaveDoc(); });
 document.addEventListener("keydown", (e) => {
   if (!cur || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
   const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && k === "f") { e.preventDefault(); startFind(); }
+  else if ((e.ctrlKey || e.metaKey) && k === "p") { e.preventDefault(); openPrint(toolsCtx); }
+  else if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
   else if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
   else if ((k === "delete" || k === "backspace") && cur.tab === "markup" && markup.sel) { e.preventDefault(); markup.deleteSelected(); }
 });
 window.addEventListener("beforeunload", (e) => {
+  recovery.flush();
   if (tabs.some((t) => t.doc.dirty)) { e.preventDefault(); e.returnValue = ""; }
 });
+// Going to the background: Android may close the app there, so the recovery copies are written now.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") recovery.flush(); });
+window.addEventListener("pagehide", () => recovery.flush());
+
+/* ---------- unsaved work from last time ---------- */
+
+function clockTime(at) {
+  const d = new Date(at), now = new Date();
+  const t = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((new Date(now.toDateString()) - new Date(d.toDateString())) / 86400000);
+  if (days === 0) return t;
+  if (days === 1) return `yesterday, ${t}`;
+  return `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" })}, ${t}`;
+}
+
+// The app closed (or was closed by Android) with changes not saved: offer them back.
+async function offerRecovery() {
+  let recs = await recovery.leftovers();
+  if (!recs.length) return;
+  recs = recs.slice(0, MAX_TABS);
+  const names = recs.map((r) => `“${r.name}.pdf”`);
+  const v = await choiceDialog({
+    title: `Restore unsaved work from ${clockTime(recs[0].at)}?`,
+    message: recs.length === 1
+      ? `${names[0]} had changes that weren't saved when the app closed.`
+      : `${recs.length} files had changes that weren't saved when the app closed: ${names.join(", ")}.`,
+    choices: [
+      { label: "Discard", value: "discard", kind: "danger-text" },
+      { label: "Restore", value: "restore", kind: "primary" }
+    ]
+  });
+  if (v === "discard") { for (const r of recs) await recovery.discard(r); return; }
+  if (v !== "restore") return; // asked again next time
+  if (!(await makeRoom(recs.length))) return;
+  for (const r of recs.slice().reverse()) await restoreCopy(r);
+}
+
+async function restoreCopy(rec) {
+  let parts;
+  try {
+    parts = await recovery.filesOf(rec);
+  } catch (e) {
+    console.warn(e);
+    toast(`“${rec.name}.pdf” couldn't be restored.`, { ms: 5000 });
+    return false;
+  }
+  const doc = new Doc();
+  const ids = new Map(); // id in the copy -> id now
+  const pairs = [];
+  for (const { meta, file } of parts) {
+    let src;
+    if (meta.kind === "blank") src = blankSource(meta.w, meta.h);
+    else {
+      const { loaded } = await loadAll([file], { many: false });
+      src = loaded[0];
+      if (!src) {
+        for (const s of doc.sources.values()) closeSource(s);
+        toast(`“${rec.name}.pdf” couldn't be restored now. It's offered again next time.`, { ms: 6000 });
+        return false;
+      }
+    }
+    ids.set(meta.id, src.id);
+    pairs.push([src, doc.addSource(src)]);
+  }
+  await bringDrawings(doc, pairs); // what the files themselves need (drawing layers, pictures)
+  // then the pages and drawings as they were
+  const st = rec.state;
+  doc.pages = st.pages.filter((p) => ids.has(p.src)).map((p) => doc.newPage({ ...p, src: ids.get(p.src) }));
+  doc.layers = st.layers.map((l) => (l.refs
+    ? { ...l, refs: Object.fromEntries(Object.entries(l.refs).filter(([k]) => ids.has(Number(k))).map(([k, r]) => [ids.get(Number(k)), r])) }
+    : l));
+  doc.activeLayer = st.activeLayer;
+  doc.watermark = st.watermark;
+  doc.imageFit = st.imageFit;
+  try {
+    for (const [hash, pic] of await recovery.picturesOf(rec)) picsOf(doc).set(hash, pic);
+  } catch (e) { console.warn(e); }
+  for (const { meta } of parts) {
+    const s = doc.sources.get(ids.get(meta.id));
+    if (!s || !s.oc || !meta.oc) continue;
+    for (const [gid, on] of meta.oc) { try { s.oc.setVisibility(gid, on, false); } catch (e) { /* gone */ } }
+  }
+  for (const { meta } of parts) {
+    const s = doc.sources.get(ids.get(meta.id));
+    if (s && meta.ocr) s.ocr = meta.ocr; // text recognised before the app closed
+  }
+  for (const s of doc.sources.values()) if (s.kind === "pdf" && doc.pages.some((p) => p.dropOcr && p.src === s.id)) await fileOcrPages(s);
+  syncSketchVisibility(doc);
+  doc.commentsVisible = rec.commentsVisible !== false;
+  if (!doc.commentsVisible) await applyCommentVisibility(doc);
+  const pdfs = [...doc.sources.values()].filter((s) => s.kind === "pdf");
+  if (rec.pw === "source" && pdfs.length === 1 && pdfs[0].password) doc.password = pdfs[0].password;
+  doc.name = rec.name;
+  doc.history = [];
+  recovery.watch(doc, rec.id); // carries on in the same copy
+  doc.dirty = true;
+  openTab(doc, "view");
+  if (rec.pw === "other") toast("The password you added to this file isn't kept with unsaved work. Add it again in Tools before saving.", { ms: 7000 });
+  return true;
+}
 
 /* ---------- files arriving from other apps ---------- */
 
@@ -813,6 +936,8 @@ onIncomingFiles((files, info) => {
   openFiles(files, { combine: files.length > 1 });
   if (info && info.partial) toast("Some of the shared files couldn't be read.");
 });
+
+offerRecovery().catch((e) => console.warn("Recovery check failed", e));
 
 /* ---------- install and updates ---------- */
 

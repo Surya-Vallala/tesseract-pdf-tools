@@ -8,6 +8,7 @@
 //   it.color, it.width  the border's colour and thickness (points); it.opacity
 // The picture itself is kept once per document in doc.pics (hash -> { blob, type, pw, ph }); the
 // marks only point at it, so undo stays light.
+import { readableImage } from "./imgconv.js";
 import { mul, inv, apply, T } from "./geom.js";
 
 export const MAX_PX = 4096;
@@ -300,7 +301,15 @@ function hasAlpha(canvas) {
 export async function pictureFromFile(file) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
   const kind = sniffImage(head);
-  if (kind === "heic") throw new PictureError("This is a HEIC photo, which the phone's browser can't read. Share it as JPEG, or set the camera to JPEG.");
+  if (kind === "heic" || kind === "tiff") {
+    let f;
+    try {
+      f = await readableImage(file);
+    } catch (e) {
+      throw new PictureError(e.message);
+    }
+    return pictureFromFile(f);
+  }
   if (kind === "pdf") throw new PictureError("pdf");
   if (!kind) throw new PictureError("This file isn't a picture the app can read.");
   const bytes = new Uint8Array(await file.arrayBuffer());

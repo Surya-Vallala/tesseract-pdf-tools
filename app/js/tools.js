@@ -2,20 +2,25 @@
 import { h, esc, icon, openSheet, segmented, toast, busy, confirmDialog, openMenu } from "./ui.js";
 import { pickFiles, settings } from "./platform.js";
 import { engine, preloadEngine } from "./engine.js";
+import { readableImage } from "./imgconv.js";
 import { buildPdf, exportPdf, openResultSheet, formatSize } from "./save.js";
 import { baseName } from "./doc.js";
 import { pageGeom } from "./geom.js";
 import { drawPage } from "./render.js";
 import { wmSVG } from "./watermark.js";
 import { LANGS, langReady, downloadLang, recognize, documentText } from "./ocr.js";
+import { fileOcrPages } from "./ocrlayer.js";
 
 
 const TOOLS = [
+  { id: "find", icon: "search", title: "Find text", text: "Look for words in this file" },
+  { id: "print", icon: "print", title: "Print", text: "To a printer, or Save as PDF" },
   { id: "password", icon: "lock", title: "Password", text: "Add, change or remove a password" },
   { id: "watermark", icon: "watermark", title: "Watermark", text: "Text or a logo across the pages" },
   { id: "reduce", icon: "compress", title: "Reduce file size", text: "Smaller files for WhatsApp and email" },
   { id: "split", icon: "split", title: "Split into files", text: "By page ranges, or every page" },
   { id: "ocr", icon: "ocr", title: "Recognise text (OCR)", text: "Make scanned pages searchable and copyable" },
+  { id: "rmocr", icon: "ocroff", title: "Remove recognised text", text: "Take out text that text recognition added" },
   { id: "text", icon: "textfile", title: "Save text", text: "All the text in a .txt file" },
   { id: "pageimg", icon: "pagepic", title: "Save pages as pictures", text: "JPEG or PNG of a page, or of every page" }
 ];
@@ -39,11 +44,12 @@ export function openTools(ctx) {
 function runTool(id, ctx) {
   const doc = ctx.doc();
   if (!doc) return;
+  if (id === "find" || id === "print") { ctx[id](); return; }
   if (doc.readOnly && id !== "text") {
     toast("This PDF is password-protected and couldn't be unlocked here. Connect to the internet once, then open it again.", { ms: 6000 });
     return;
   }
-  ({ password: openPassword, watermark: openWatermark, reduce: openReduce, split: openSplit, ocr: openOcr, text: saveText, pageimg: openPageImages })[id](ctx);
+  ({ password: openPassword, watermark: openWatermark, reduce: openReduce, split: openSplit, ocr: openOcr, rmocr: openRemoveOcr, text: saveText, pageimg: openPageImages })[id](ctx);
 }
 
 /* ---------- Save pages as pictures ---------- */
@@ -234,6 +240,7 @@ async function logoImage(variant = "black") {
 }
 
 async function pictureImage(file) {
+  file = await readableImage(file);
   const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
   let bytes, mime;
   const isJpeg = file.type === "image/jpeg";
@@ -346,9 +353,9 @@ function openWatermark(ctx) {
         renderSrc(); paint();
       });
       row.querySelector("[data-pic]").addEventListener("click", async () => {
-        const [f] = await pickFiles({ accept: "image/*" });
+        const [f] = await pickFiles({ accept: "image/*,.heic,.heif,.tif,.tiff" });
         if (!f) return;
-        try { spec.image = await pictureImage(f); } catch (e) { toast("That picture couldn't be read."); return; }
+        try { spec.image = await pictureImage(f); } catch (e) { toast(e && e.code === "offline" ? e.message : "That picture couldn't be read."); return; }
         renderSrc(); paint();
       });
       srcBox.appendChild(row);
@@ -608,6 +615,13 @@ async function openOcr(ctx) {
       for (const c of langs) if (!(await langReady(c))) { b.set(`Downloading ${LANGS.find((l) => l.code === c).name}…`); await downloadLang(c); }
       const pages = scope === "all" ? doc.pages : [doc.pages[Math.max(0, ctx.currentIndex())]];
       const r = await recognize(doc, pages, langs, (t) => b.set(t));
+      // the new text replaces any recognised earlier, here or in the file
+      for (const p of pages) {
+        const s = doc.src(p);
+        if (!(s.ocr && s.ocr[p.index])) continue;
+        delete p.hideOcr;
+        if (s.kind === "pdf" && (await fileOcrPages(s)).has(p.index)) p.dropOcr = true;
+      }
       b.close();
       doc.dirty = true;
       ctx.textChanged(pages);
@@ -617,6 +631,52 @@ async function openOcr(ctx) {
       console.error(e);
       toast(navigator.onLine === false ? "This needs the internet the first time, to download the text reader." : "Text recognition didn't work. Try again.", { ms: 6000 });
     }
+  });
+}
+
+/* ---------- Remove recognised text ---------- */
+
+async function openRemoveOcr(ctx) {
+  const doc = ctx.doc();
+  const b = busy("Looking for recognised text…");
+  const found = [];
+  try {
+    for (const p of doc.pages) {
+      const s = doc.src(p);
+      const here = !p.hideOcr && s.ocr && s.ocr[p.index] && s.ocr[p.index].words.length;
+      const inFile = s.kind === "pdf" && !p.dropOcr && (await fileOcrPages(s)).has(p.index);
+      if (here || inFile) found.push(p);
+    }
+  } finally {
+    b.close();
+  }
+  if (!found.length) {
+    toast("This file has no recognised text to remove.", { ms: 4000 });
+    return;
+  }
+  const n = found.length;
+  const current = doc.pages[Math.max(0, Math.min(doc.pages.length - 1, ctx.currentIndex()))];
+  let scope = "all";
+  const opts = [{ value: "all", label: n === doc.pages.length ? `All ${n} page${n === 1 ? "" : "s"}` : `The ${n} page${n === 1 ? "" : "s"} with it` }];
+  if (n > 1 && found.includes(current)) opts.push({ value: "one", label: `Page ${doc.pages.indexOf(current) + 1}` });
+  const body = h(`<div><p class="note" style="margin-top:0">Takes out the invisible text that text recognition put over scanned pages, for example to recognise it again in another language. The pages look the same.</p>
+    <div class="group-label">Pages</div><div data-scope></div></div>`);
+  body.querySelector("[data-scope]").appendChild(segmented(opts, scope, (v) => { scope = v; }));
+  const foot = h(`<div class="foot-row"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="button" data-ok>Remove</button></div>`);
+  const sheet = openSheet({ title: "Remove recognised text", body, foot });
+  foot.querySelector("[data-cancel]").addEventListener("click", () => sheet.close());
+  foot.querySelector("[data-ok]").addEventListener("click", async () => {
+    const pages = scope === "one" ? [current] : found;
+    sheet.close();
+    doc.commit();
+    for (const p of pages) {
+      const s = doc.src(p);
+      if (s.ocr && s.ocr[p.index]) p.hideOcr = true;
+      if (s.kind === "pdf" && (await fileOcrPages(s)).has(p.index)) p.dropOcr = true;
+    }
+    ctx.textChanged(pages);
+    ctx.changed();
+    toast(`Recognised text removed from ${pages.length} page${pages.length === 1 ? "" : "s"}. Undo brings it back.`, { ms: 5000 });
   });
 }
 

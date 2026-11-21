@@ -17,7 +17,7 @@ const MM = 72 / 25.4;
 
 export function openPictureMenu(mk) {
   const rows = [
-    { how: "file", ic: "image", title: "Photo or picture", text: "From your gallery or files: JPG, PNG, WebP, GIF" },
+    { how: "file", ic: "image", title: "Photo or picture", text: "From your gallery or files: JPG, PNG, HEIC, TIFF, WebP" },
     { how: "camera", ic: "camera", title: "Take a photo", text: "A signature, a logo or a sketch on paper" },
     { how: "pdf", ic: "pagepic", title: "Page of a PDF", text: "One page, placed as a picture" }
   ];
@@ -38,7 +38,7 @@ async function insertPicture(mk, how) {
   if (!doc) return;
   const files = await pickFiles(how === "pdf"
     ? { accept: "application/pdf,.pdf" }
-    : { accept: "image/*", capture: how === "camera" ? "environment" : null });
+    : { accept: "image/*,.heic,.heif,.tif,.tiff", capture: how === "camera" ? "environment" : null });
   const file = files && files[0];
   if (!file) return;
   let b = busy("Adding the picture…");
@@ -216,6 +216,15 @@ export function appendPicOptions(mk, o, it) {
       })
     }), "Border colour and thickness"));
   }
+  const keep = keepProportions();
+  const kp = h(`<button type="button" role="switch" aria-checked="${keep}" class="chip-btn toggle tight${keep ? " on" : ""}" title="On: corners keep the picture's proportions. Off: corners stretch it freely.">${icon("link")}<span>Keep proportions</span></button>`);
+  kp.addEventListener("click", () => {
+    setKeepProportions(!keepProportions());
+    mk.renderOptions();
+    if (keepToast) keepToast.remove();
+    keepToast = toast(keepProportions() ? "Corners keep the proportions" : "Corners stretch freely", { ms: 1800 });
+  });
+  o.appendChild(kp);
   const more = h(`<button type="button" class="chip-btn tight">${icon("more")}<span>More</span></button>`);
   more.addEventListener("click", () => picMore(mk, more));
   o.appendChild(more);
@@ -357,6 +366,46 @@ function openLook(mk) {
 /* ---------- crop ---------- */
 
 /** Crop mode: the whole picture shows faintly, the edges of the part that stays can be dragged. */
+const KEEP_KEY = "tpt-pic-keep";
+let keepToast = null;
+let keepNow = null; // when the phone's storage can't be used
+/** Do a picture's corners keep its proportions? (on unless switched off; remembered) */
+export function keepProportions() {
+  try { return localStorage.getItem(KEEP_KEY) !== "0"; } catch (e) { return keepNow !== false; }
+}
+export function setKeepProportions(on) {
+  keepNow = !!on;
+  try { localStorage.setItem(KEEP_KEY, on ? "1" : "0"); } catch (e) { /* kept for now only */ }
+}
+
+/** Skew: while it's on, dragging a side of the picture slants it (as Ctrl + a side on Windows). */
+export function startSkew(mk) {
+  const it = mk.selectedItem();
+  if (!it) return;
+  const key = mk.sel.key;
+  const panel = h(`<div class="pic-panel skew" role="dialog" aria-label="Skew">
+    <div class="pic-panel-head"><span class="pic-panel-note">${icon("skew")}<span>Drag a side to slant the picture.</span></span></div>
+    <div class="pic-panel-foot"><button type="button" class="btn link-btn" data-clear>Straighten</button><span class="grow"></span><button type="button" class="btn primary" data-done>Done</button></div></div>`);
+  mk.screen.classList.add("pic-panel-open");
+  mk.views.appendChild(panel);
+  const layer = pushLayer({
+    onClose: () => {
+      panel.remove();
+      mk.screen.classList.remove("pic-panel-open");
+      mk.skewing = null;
+      mk.renderOptions();
+      mk.drawSelection();
+    }
+  });
+  mk.skewing = { key, id: it.id, layer };
+  panel.querySelector("[data-done]").addEventListener("click", () => closeLayer(layer));
+  panel.querySelector("[data-clear]").addEventListener("click", () => {
+    if (!mk.selectedItem()) return;
+    setImg(mk, { skew: [0, 0] });
+  });
+  mk.drawSelection();
+}
+
 export function startCrop(mk) {
   const it = mk.selectedItem();
   if (!it) return;

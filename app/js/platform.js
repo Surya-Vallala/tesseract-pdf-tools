@@ -5,7 +5,7 @@ import * as native from "./native.js";
 
 export const isAndroidApp = native.isNative;
 
-export function pickFiles({ multiple = false, accept = "application/pdf,.pdf,image/*", capture = null } = {}) {
+export function pickFiles({ multiple = false, accept = "application/pdf,.pdf,image/*,.heic,.heif,.tif,.tiff", capture = null } = {}) {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";

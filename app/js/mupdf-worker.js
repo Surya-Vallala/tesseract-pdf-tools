@@ -38,6 +38,23 @@ function out(buf) {
 }
 
 const OPS = {
+  /** A picture the phone's browser can't read (TIFF and the like) as PNG, with its dpi. */
+  async imagePng(id, bytes) {
+    const img = new mupdf.Image(bytes);
+    let pix = img.toPixmap();
+    const cs = pix.getColorSpace();
+    if (cs && !cs.isRGB() && !cs.isGray()) {
+      const rgb = pix.convertToColorSpace(mupdf.ColorSpace.DeviceRGB, !!pix.getAlpha());
+      pix.destroy();
+      pix = rgb;
+    }
+    const png = pix.asPNG();
+    const result = { bytes: new Uint8Array(png), dpi: img.getXResolution() || 0, w: pix.getWidth(), h: pix.getHeight() };
+    pix.destroy();
+    img.destroy();
+    return result;
+  },
+
   async unlock(id, bytes, password) {
     const doc = openPdf(bytes, password);
     const result = out(doc.saveToBuffer("encrypt=none"));
@@ -208,7 +225,7 @@ const OPS = {
       const enc = format === "png" ? pix.asPNG() : pix.asJPEG(quality, false);
       const copy = new Uint8Array(enc.length);
       copy.set(enc);
-      files.push({ bytes: copy, w: pix.getWidth(), h: pix.getHeight() });
+      files.push({ bytes: copy, w: pix.getWidth(), h: pix.getHeight(), pw: x1 - x0, ph: y1 - y0 });
       pix.destroy();
       page.destroy();
     }

@@ -10,6 +10,7 @@ import { wmAppliesTo, wmLayout } from "./watermark.js";
 import { filterContent } from "./contentfilter.js";
 import { engine } from "./engine.js";
 import { layersEdited } from "./layers.js";
+import { stripOcrLayer, OCR_KEY } from "./ocrlayer.js";
 import { openSheet, h, esc, icon, busy, toast, segmented } from "./ui.js";
 import { canShareFiles, shareFiles, downloadFile, downloadFiles, settings } from "./platform.js";
 import { rememberFile } from "./recent.js";
@@ -771,6 +772,7 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
         if (st.hiddenOut.size) stripHidden(ctx, leaf, makeOcHidden(ctx, st.hiddenOut), visited);
       }
       if (s.imported || s.sketch) dropOldDrawings(ctx, leaf, s.imported, doc);
+      if (p.dropOcr) stripOcrLayer(ctx, leaf); // recognised text that came with the file, removed
       if (!comments) stripMarkupAnnots(ctx, leaf);
       page = PDFPage.of(leaf, ref, out);
       out.addPage(page);
@@ -809,7 +811,7 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
     // Everything we add to the page
     const leaf = page.node;
     const g = pageGeom(doc, p);
-    const ocr = s.ocr && s.ocr[p.index];
+    const ocr = !p.hideOcr && s.ocr && s.ocr[p.index];
     const wantsWM = doc.watermark && wmAppliesTo(doc.watermark, p.key);
     const marks = p.items.filter((it) => (it.kind === "ink" || it.kind === "shape" || (it.kind === "pic" && !it.flat)) && (!visibleOnly || drawLayerVisible.get(it.layer) !== false));
     const flat = p.items.filter((it) => it.kind === "pic" && it.flat);
@@ -837,11 +839,16 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
         usedLayers.add(it.layer);
         await addDrawing(B, leaf, page.ref, it, g, m, layerRef(it.layer), author, s);
       }
-      if (ocr && ocr.words.length) {
-        const om = mul(m, inv(rot(ocr.R || 0, g.W, g.H)));
-        ops += ocrOps(B, R, ocr, om);
-      }
       if (ops) leaf.addContentStream(ctx.register(ctx.flateStream(ops)));
+      if (ocr && ocr.words.length) {
+        // recognised text: its own form and stream, marked, so either app can remove it again
+        const om = mul(m, inv(rot(ocr.R || 0, g.W, g.H)));
+        const ores = ctx.obj({});
+        const form = ctx.register(ctx.flateStream(ocrOps(B, new Res(B, ores), ocr, om),
+          { Type: "XObject", Subtype: "Form", BBox: [-100000, -100000, 100000, 100000], Resources: ores, [OCR_KEY]: true }));
+        const name = R.add("XObject", "TPTOcr", form);
+        leaf.addContentStream(ctx.register(ctx.flateStream(`q ${name} Do Q`)));
+      }
       if (comments) {
         for (const it of p.items) if (it.kind === "comment") await addComment(B, leaf, page.ref, it, g.unit, m);
       }

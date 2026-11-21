@@ -1,14 +1,17 @@
 {
-  "version": "1.9.2",
-  "versionCode": 10902,
-  "file": "TesseractPDF-1.9.2.apk",
-  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.9.2.apk",
-  "size_mb": 21.0,
-  "sha256": "3c9cf8420f3c7d087d7351410ea449537c945ff7481744ba2ae5c1366237d541",
+  "version": "1.10.0",
+  "versionCode": 11000,
+  "file": "TesseractPDF-1.10.0.apk",
+  "url": "https://surya-vallala.github.io/tesseract-pdf-tools/android/TesseractPDF-1.10.0.apk",
+  "size_mb": 21.7,
+  "sha256": "4f4b3ccc493e223a66cbae2ff43c74f2c218e9f7c677d1358d2cea3bbcedc18d",
   "date": "2026-11-21",
   "notes": [
-    "Fixed: saving only the visible layers of a Windows-app file no longer lists a hidden drawing layer in the new file",
-    "From 1.9.1: blank pages (Pages > Add pages > Blank pages)",
-    "From 1.9.0: pictures in Mark up, and a daily check for updates"
+    "Find text and Print, in Tools",
+    "If the app closes before you save, it offers your unsaved work back",
+    "Pictures: a Keep proportions switch, and Skew to slant a picture",
+    "HEIC and TIFF photos open, and can be added as pages or pictures",
+    "Remove recognised text, in Tools",
+    "From 1.9.2: saving only the visible layers of a Windows-app file fixed"
   ]
 }

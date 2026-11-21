@@ -1,7 +1,7 @@
 /* Tesseract PDF Tools - service worker
    Keeps the app working offline and receives files shared from other apps.
    Bump VERSION with every release so phones pick up the new files. */
-const VERSION = "1.9.2";
+const VERSION = "1.10.0";
 const APP_CACHE = "tpt-app-" + VERSION;
 const RUNTIME_CACHE = "tpt-runtime";
 const INBOX_CACHE = "tpt-share-inbox";
@@ -34,6 +34,10 @@ const CORE = [
   "js/scan.js",
   "js/scanimg.js",
   "js/recent.js",
+  "js/recovery.js",
+  "js/find.js",
+  "js/print.js",
+  "js/ocrlayer.js",
   "js/contentfilter.js",
   "js/blocks.js",
   "js/blockui.js",
@@ -44,6 +48,9 @@ const CORE = [
   "js/pics.js",
   "js/picui.js",
   "js/mupdf-worker.js",
+  "js/imgconv.js",
+  "js/heif.js",
+  "js/heif-worker.js",
   "icons/icon.svg",
   "icons/icon-192.png",
   "icons/icon-512.png",

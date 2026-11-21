@@ -1,4 +1,5 @@
 // Reading text from scanned pages (Tesseract, running on the phone).
+import { fileOcrPages } from "./ocrlayer.js";
 import { rot, apply } from "./geom.js";
 import { pdfjsLib } from "./doc.js";
 
@@ -136,9 +137,9 @@ export async function documentText(doc) {
     const p = doc.pages[i];
     const s = doc.src(p);
     let text = "";
-    const ocr = s.ocr && s.ocr[p.index];
+    const ocr = !p.hideOcr && s.ocr && s.ocr[p.index];
     if (ocr && ocr.text) text = ocr.text;
-    else if (s.kind === "pdf") {
+    else if (s.kind === "pdf" && !(p.dropOcr && (await fileOcrPages(s)).has(p.index))) {
       try {
         const page = await s.pdf.getPage(p.index + 1);
         const tc = await page.getTextContent();
@@ -152,7 +153,7 @@ export async function documentText(doc) {
 
 export function pageHasText(doc, p) {
   const s = doc.src(p);
-  return !!(s.ocr && s.ocr[p.index] && s.ocr[p.index].words.length);
+  return !!(!p.hideOcr && s.ocr && s.ocr[p.index] && s.ocr[p.index].words.length);
 }
 
 export { apply };

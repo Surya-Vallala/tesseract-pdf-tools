@@ -2,6 +2,7 @@
 // In the Android app this opens Google's document scanner. In Chrome (or if Google's scanner isn't
 // available) the built-in scanner takes a photo, guesses where the page is, lets you drag the four
 // corners, then straightens and cleans the page.
+import { readableImage } from "./imgconv.js";
 import { h, icon, toast, busy, nextFrame, pushLayer, closeLayer, confirmDialog, segmented } from "./ui.js";
 import { pickFiles, isAndroidApp, settings } from "./platform.js";
 import { scanWithGoogle } from "./native.js";
@@ -117,15 +118,15 @@ function builtInScanner() {
     }
 
     async function getPhoto(useCamera) {
-      const files = await pickFiles(useCamera ? { accept: "image/*", capture: "environment" } : { accept: "image/*" });
+      const files = await pickFiles(useCamera ? { accept: "image/*", capture: "environment" } : { accept: "image/*,.heic,.heif,.tif,.tiff" });
       if (!files.length) return;
       const b = busy("Finding the page…");
       try {
         let bitmap;
         try {
-          bitmap = await createImageBitmap(files[0], { imageOrientation: "from-image" });
+          bitmap = await createImageBitmap(await readableImage(files[0]), { imageOrientation: "from-image" });
         } catch (e) {
-          toast("That photo couldn't be read. If it's a HEIC photo, set the camera to JPEG.", { ms: 6000 });
+          toast(e && e.code ? e.message : "That photo couldn't be read.", { ms: 6000 });
           return;
         }
         const k = Math.min(1, MAX_SOURCE / Math.max(bitmap.width, bitmap.height));
