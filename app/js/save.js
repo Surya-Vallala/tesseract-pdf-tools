@@ -870,6 +870,16 @@ export async function buildPdf(doc, pages, { layers = "all", comments = true, ti
     if (!props) continue;
     const copied = st.copier.copy(props);
     const hidden = st.hiddenOut || new Set();
+    // "Only what's visible": a hidden drawing layer of this file stays out too. Its drawings are
+    // written again rather than copied, so the page copying above never met its layer object.
+    if (visibleOnly && s.sketch) {
+      for (const [id, layerId] of s.sketch) {
+        const l = doc.layer(layerId);
+        if (!l || l.visible) continue;
+        const mapped = st.copier.traversedObjects.get(refFromId(id));
+        if (mapped && mapped !== PDFNull) hidden.add(mapped.toString());
+      }
+    }
     const list = copied.lookupMaybe(PDFName.of("OCGs"), PDFArray);
     if (list) for (const r of list.asArray()) if (!hidden.has(r.toString())) ocgs.push(r);
     for (const [id, grp] of s.oc) {

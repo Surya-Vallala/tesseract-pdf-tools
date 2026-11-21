@@ -17,7 +17,7 @@ import { scanPages } from "./scan.js";
 import { rememberFile, listRecent, recentFile, forgetRecent, clearRecent, when } from "./recent.js";
 import { hydrateIcons, initHistory, pushLayer, closeLayer, confirmDialog, choiceDialog, passwordDialog, toast, busy, openMenu, openSheet, h, esc, icon, switchHTML } from "./ui.js";
 
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.9.2";
 const $ = (id) => document.getElementById(id);
 
 const home = $("home");
