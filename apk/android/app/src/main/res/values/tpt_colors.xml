@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Same as the bg colour in app/app.css -->
-    <color name="tpt_bg">#FAFAF8</color>
-</resources>
